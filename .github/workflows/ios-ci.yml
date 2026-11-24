@@ -22,7 +22,7 @@ jobs:
           swift run AnimeHeavenCoreSelfTest
 
   ios-simulator-ui-tests:
-    name: Real iOS Simulator Build & XCUITests
+    name: Real iOS Simulator Build, XCUITests & Screenshots
     runs-on: macos-15
     needs: core-tests
     steps:
@@ -64,7 +64,7 @@ jobs:
           xcrun simctl bootstatus "$SIM_UDID" -b
           echo "udid=$SIM_UDID" >> "$GITHUB_OUTPUT"
 
-      - name: Build & run real XCUITests on booted iOS Simulator
+      - name: Build & run real XCUITests walkthrough on booted iOS Simulator
         run: |
           xcodebuild test \
             -project AnimeHeaven.xcodeproj \
@@ -73,16 +73,57 @@ jobs:
             -resultBundlePath TestResults.xcresult \
             CODE_SIGNING_ALLOWED=NO
 
-      - name: Capture Simulator UI Screenshot
+      - name: Export PNG screenshots from TestResults.xcresult
         if: always()
         run: |
-          xcrun simctl io "${{ steps.sim.outputs.udid }}" screenshot ios-ui-screenshot.png || true
+          mkdir -p xcresult-attachments screenshots
+          xcrun xcresulttool export attachments \
+            --path TestResults.xcresult \
+            --output-path xcresult-attachments || true
+          python3 - <<'PY'
+          import json, os, shutil
 
-      - name: Upload XCUITest Result Bundle & Screenshot
+          src_dir = "xcresult-attachments"
+          dst_dir = "screenshots"
+          os.makedirs(dst_dir, exist_ok=True)
+          manifest_path = os.path.join(src_dir, "manifest.json")
+          copied = 0
+
+          if os.path.exists(manifest_path):
+              entries = json.load(open(manifest_path))
+              for test_entry in entries:
+                  for att in test_entry.get("attachments", []):
+                      exported = att.get("exportedFileName", "")
+                      suggested = att.get("suggestedHumanReadableName", "")
+                      src = os.path.join(src_dir, exported)
+                      if exported and os.path.exists(src) and src.lower().endswith(".png"):
+                          base = suggested.split("_")[0] if suggested else os.path.splitext(exported)[0]
+                          if not base.lower().endswith(".png"):
+                              base += ".png"
+                          shutil.copy2(src, os.path.join(dst_dir, base))
+                          copied += 1
+
+          if copied == 0:
+              for root, _, files in os.walk(src_dir):
+                  for idx, fn in enumerate(sorted(files), 1):
+                      if fn.lower().endswith(".png"):
+                          shutil.copy2(os.path.join(root, fn), os.path.join(dst_dir, f"{idx:02d}-{fn}"))
+                          copied += 1
+
+          print(f"Exported {copied} PNG screenshots to {dst_dir}/")
+          PY
+          ls -lh screenshots/
+
+      - name: Upload iOS App Screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: animeheaven-ios-screenshots
+          path: screenshots/*.png
+
+      - name: Upload XCUITest Result Bundle
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: animeheaven-ios-ui-tests
-          path: |
-            TestResults.xcresult
-            ios-ui-screenshot.png
+          path: TestResults.xcresult

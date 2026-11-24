@@ -7,65 +7,73 @@ final class AnimeHeavenUITests: XCTestCase {
     }
 
     @MainActor
-    func testLaunchAndNavigateAllTabs() throws {
+    func testFullAppWalkthroughCapturesScreenshots() throws {
         let app = XCUIApplication()
         app.launch()
 
+        // 1. Home (Schedule)
         let scheduleTab = app.tabBars.buttons["Schedule"]
         XCTAssertTrue(scheduleTab.waitForExistence(timeout: 15), "Schedule tab should appear on launch")
         XCTAssertTrue(app.tabBars.buttons["New"].exists)
         XCTAssertTrue(app.tabBars.buttons["Popular"].exists)
         XCTAssertTrue(app.tabBars.buttons["Bookmarks"].exists)
+        sleep(3)
+        attachScreenshot(named: "01-ios-home-schedule")
 
-        attachScreenshot(named: "01-Home-Schedule")
-
+        // 2. New Releases tab
         app.tabBars.buttons["New"].tap()
+        sleep(3)
+        attachScreenshot(named: "02-ios-new")
+
+        // 3. Popular tab
         app.tabBars.buttons["Popular"].tap()
+        sleep(3)
+        attachScreenshot(named: "03-ios-popular")
+
+        // 4. Bookmarks tab
         app.tabBars.buttons["Bookmarks"].tap()
-        attachScreenshot(named: "02-Bookmarks")
+        sleep(2)
+        attachScreenshot(named: "04-ios-bookmarks")
 
+        // 5. Return to Schedule and open Search with live query
         scheduleTab.tap()
-    }
+        sleep(1)
+        let searchBtn = app.buttons["topbar.search"]
+        XCTAssertTrue(searchBtn.waitForExistence(timeout: 10), "Search button should be visible")
+        searchBtn.tap()
+        XCTAssertTrue(app.navigationBars["Search"].waitForExistence(timeout: 10), "Search screen should open")
+        let searchField = app.textFields["Search anime titles..."]
+        XCTAssertTrue(searchField.waitForExistence(timeout: 5), "Search field should exist")
+        searchField.tap()
+        searchField.typeText("frieren")
+        sleep(3)
+        attachScreenshot(named: "05-ios-search-results")
 
-    @MainActor
-    func testOpenSettingsSwitchThemeAndReturn() throws {
-        let app = XCUIApplication()
-        app.launch()
+        // Navigate back from Search
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(scheduleTab.waitForExistence(timeout: 10))
 
+        // 6. Settings (Default OLED Dark)
         let settingsBtn = app.buttons["topbar.settings"]
-        XCTAssertTrue(settingsBtn.waitForExistence(timeout: 15), "Settings button should be visible")
+        XCTAssertTrue(settingsBtn.waitForExistence(timeout: 10), "Settings button should be visible")
         settingsBtn.tap()
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 10), "Settings screen should open")
+        sleep(1)
+        attachScreenshot(named: "06-ios-settings-dark")
 
-        let navTitle = app.navigationBars["Settings"]
-        XCTAssertTrue(navTitle.waitForExistence(timeout: 10), "Settings screen should open")
-
+        // 7. Switch Theme to Midnight Indigo
         let indigoTheme = app.buttons["Midnight Indigo"]
         if indigoTheme.waitForExistence(timeout: 5) {
             indigoTheme.tap()
+            sleep(1)
         }
-        attachScreenshot(named: "03-Settings")
+        attachScreenshot(named: "07-ios-settings-indigo")
 
+        // 8. Return to Home in Midnight Indigo
         app.navigationBars.buttons.element(boundBy: 0).tap()
-        XCTAssertTrue(app.tabBars.buttons["Schedule"].waitForExistence(timeout: 10))
-    }
-
-    @MainActor
-    func testOpenSearchScreenAndTypeQuery() throws {
-        let app = XCUIApplication()
-        app.launch()
-
-        let searchBtn = app.buttons["topbar.search"]
-        XCTAssertTrue(searchBtn.waitForExistence(timeout: 15), "Search button should be visible")
-        searchBtn.tap()
-
-        XCTAssertTrue(app.navigationBars["Search"].waitForExistence(timeout: 10), "Search screen should open")
-        let searchField = app.textFields["Search anime titles..."]
-        XCTAssertTrue(searchField.waitForExistence(timeout: 5), "Native search text field should exist")
-        searchField.tap()
-        searchField.typeText("frieren")
-        attachScreenshot(named: "04-Search")
-
-        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(scheduleTab.waitForExistence(timeout: 10))
+        sleep(2)
+        attachScreenshot(named: "08-ios-home-indigo")
     }
 
     @MainActor
