@@ -13,6 +13,7 @@ struct HomeView: View {
     let onOpenSettings: () -> Void
 
     @Environment(\.ahPalette) private var palette
+    @Environment(\.artworkStore) private var artworkStore
     @State private var isHomeVisible = true
     private let gridColumns = [GridItem(.adaptive(minimum: 112, maximum: 165), spacing: 12)]
 
@@ -114,6 +115,18 @@ struct HomeView: View {
                 .refreshable {
                     await viewModel.refreshAsync()
                 }
+            }
+        }
+        .overlay(alignment: .topLeading) {
+            if let store = artworkStore, store.tracksWalkthroughImages, let feed = viewModel.feed,
+               let banner = feed.banners.first {
+                let required = [ArtworkStore.walkthroughImageKey(banner.animeId, slot: .landscape16x9)]
+                    + feed.popularItems.prefix(2).map { ArtworkStore.walkthroughImageKey($0.id, slot: .portrait2x3) }
+                Color.clear.frame(width: 1, height: 1)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Home artwork")
+                    .accessibilityValue(store.walkthroughImages.isSuperset(of: required) ? "ready" : "loading")
+                    .accessibilityIdentifier("walkthrough.home.artwork")
             }
         }
         .navigationTitle("")

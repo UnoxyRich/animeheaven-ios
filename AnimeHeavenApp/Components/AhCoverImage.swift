@@ -80,24 +80,33 @@ public struct AhCoverImage: View {
             }
             let updates = await resolver.updates(for: artwork)
             async let enriched = resolver.resolve(artwork, slot: slot)
-            await display(await resolver.cached(artwork))
+            let initial = Task { @MainActor in
+                await display(await resolver.cached(artwork), initialOnly: true)
+            }
+            defer { initial.cancel() }
             for await value in updates { await display(value) }
             _ = await enriched
         }
     }
 
     @MainActor
-    private func display(_ artwork: AnimeArtwork?) async {
+    private func display(_ artwork: AnimeArtwork?, initialOnly: Bool = false) async {
         let urls = (artwork ?? AnimeArtwork()).urls(for: slot, episodeNumber: episodeNumber,
             fallbackUrl: url, nativeLandscapeFirst: nativeLandscapeFirst)
         for candidate in urls {
-            if Task.isCancelled { return }
+            if Task.isCancelled || initialOnly && loaded?.key == sourceKey { return }
             if loaded?.key == sourceKey && loaded?.url == candidate { return }
             if let image = await imageCache.image(for: candidate, targetSize: targetSize) {
                 guard !Task.isCancelled else { return }
+                if initialOnly && loaded?.key == sourceKey { return }
                 let color = artwork?.accentColorHex.flatMap { UInt32($0.trimmingCharacters(in: CharacterSet(charactersIn: "#")), radix: 16) }
                 withAnimation(.easeOut(duration: 0.18)) {
                     loaded = Loaded(key: sourceKey, url: candidate, image: image, accent: color.map { Color(hex: $0) })
+                }
+                let ratio = image.size.width / image.size.height
+                let ratioMatchesSlot = slot == .portrait2x3 ? (0.45...0.9).contains(ratio) : (1.15...2.48).contains(ratio)
+                if let lookup = self.artwork, ratioMatchesSlot {
+                    store?.recordWalkthroughImage(lookup.animeId, slot: slot)
                 }
                 return
             }

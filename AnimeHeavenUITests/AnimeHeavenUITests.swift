@@ -9,7 +9,7 @@ final class AnimeHeavenUITests: XCTestCase {
     @MainActor
     func testFullAppWalkthroughCapturesScreenshots() throws {
         let app = XCUIApplication()
-        app.launchArguments += ["-UITestDisableAutoScroll"]
+        app.launchArguments += ["-UITestDisableAutoScroll", "-UITestTrackArtwork"]
         app.launch()
 
         // 1. Home (Schedule) — Liquid Glass Floating Tab Bar
@@ -23,7 +23,11 @@ final class AnimeHeavenUITests: XCTestCase {
         XCTAssertEqual(header.label, "For You")
         XCTAssertGreaterThan(header.frame.width, 48, "The Home title must not collapse into an icon-only tile.")
         XCTAssertTrue(app.staticTexts["Popular Today"].waitForExistence(timeout: 15), "Home Popular Today section should load")
-        sleep(3)
+        let artwork = app.descendants(matching: .any)["walkthrough.home.artwork"].firstMatch
+        XCTAssertTrue(artwork.waitForExistence(timeout: 10))
+        let artworkReady = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "ready"), object: artwork)
+        XCTAssertEqual(XCTWaiter.wait(for: [artworkReady], timeout: 25), .completed, "Hero and both visible Top 10 posters should finish decoding")
+        sleep(1) // Allow the decoded artwork's crossfade to settle.
         attachScreenshot(named: "01-ios-home-schedule")
 
         // 2. New Releases tab
