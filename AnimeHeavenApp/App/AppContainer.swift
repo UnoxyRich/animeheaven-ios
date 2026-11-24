@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 import SwiftUI
 import AnimeHeavenCore
 
@@ -22,15 +23,8 @@ public final class AppContainer {
         AnimeHeavenClient(session: AnimeHeavenClient.makeDefaultSession(cacheDirectory: cachesDir))
     }()
 
-    public lazy var database: SQLiteDatabase = {
-        let dbPath = appSupportDir.appendingPathComponent("animeheaven_ios.db").path
-        do {
-            return try SQLiteDatabase(path: dbPath)
-        } catch {
-            // Fallback to in-memory store if disk path is unavailable
-            return try! SQLiteDatabase(path: ":memory:")
-        }
-    }()
+    public let database: SQLiteDatabase
+    private nonisolated static let logger = Logger(subsystem: "me.animeheaven.ios", category: "Storage")
 
     public lazy var networkPolicy: NetworkPolicy = {
         let store = self.settingsStore
@@ -103,14 +97,28 @@ public final class AppContainer {
         }
     }
 
-    public init(settingsStore: SettingsStore? = nil) {
-        self.settingsStore = settingsStore ?? SettingsStore()
-        let fm = FileManager.default
-        self.cachesDir = fm.urls(for: .cachesDirectory, in: .userDomainMask).first
-            ?? fm.temporaryDirectory
-        self.appSupportDir = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? fm.temporaryDirectory
-        try? fm.createDirectory(at: appSupportDir, withIntermediateDirectories: true)
+    private init(database: SQLiteDatabase, cachesDirectory: URL, supportDirectory: URL) {
+        self.settingsStore = SettingsStore()
+        self.database = database
+        self.cachesDir = cachesDirectory
+        self.appSupportDir = supportDirectory
+    }
+
+    public static func bootstrap() async throws -> AppContainer {
+        let (db, caches, support) = try await Task.detached(priority: .userInitiated) {
+            let fm = FileManager.default
+            let caches = fm.urls(for: .cachesDirectory, in: .userDomainMask).first ?? fm.temporaryDirectory
+            let support = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? fm.temporaryDirectory
+            let db: SQLiteDatabase
+            do {
+                db = try SQLiteDatabase(path: support.appending(path: "animeheaven_ios.db").path)
+            } catch {
+                logger.error("Local storage unavailable; using temporary session storage: \(error.localizedDescription)")
+                db = try SQLiteDatabase(path: ":memory:")
+            }
+            return (db, caches, support)
+        }.value
+        return AppContainer(database: db, cachesDirectory: caches, supportDirectory: support)
     }
 
     public func warmUpOnStartup() {
@@ -121,8 +129,10 @@ public final class AppContainer {
         let preloader = self.preloader
         let tracker = self.mirrorHealthTracker
         let booster = self.chunkBooster
+        let images = imageCacheManager
 
         Task.detached(priority: .utility) {
+            async let imageWarmup: Void = images.warmUp()
             let learnedHosts = tracker.topHealthyHosts(limit: 2).map { "https://\($0)" }
             client.preconnectHosts([AnimeHeavenClient.baseURL] + learnedHosts)
 
@@ -146,10 +156,11 @@ public final class AppContainer {
 
             // Warm video cache subsystem off main thread after Frame 1 settles
             try? await Task.sleep(for: .milliseconds(800))
-            _ = await booster.diskCache.totalSizeBytes()
+            await booster.diskCache.warmUp()
 
             try? await Task.sleep(for: .seconds(9))
             await repository.pruneExpiredCache()
+            await imageWarmup
         }
     }
 

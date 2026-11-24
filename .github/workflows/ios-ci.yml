@@ -21,8 +21,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - name: Select Xcode 16.4
-        run: sudo xcode-select --switch /Applications/Xcode_16.4.app/Contents/Developer
+      - name: Select Xcode 26.2
+        run: sudo xcode-select --switch /Applications/Xcode_26.2.app/Contents/Developer
 
       - name: Run SwiftPM unit tests, release build & self-test
         working-directory: Packages/AnimeHeavenCore
@@ -39,8 +39,8 @@ jobs:
     needs: core-tests
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - name: Select Xcode 16.4
-        run: sudo xcode-select --switch /Applications/Xcode_16.4.app/Contents/Developer
+      - name: Select Xcode 26.2
+        run: sudo xcode-select --switch /Applications/Xcode_26.2.app/Contents/Developer
 
       - name: Build unsigned iOS Release
         run: |
@@ -54,9 +54,8 @@ jobs:
         run: |
           xcodebuild -version
           xcrun simctl list runtimes
-          if ! xcrun simctl list runtimes iOS | grep -q "iOS"; then
-            echo "Downloading iOS Simulator runtime..."
-            xcodebuild -downloadPlatform iOS
+          if ! xcrun simctl list runtimes iOS | grep -q 'iOS 26\.2'; then
+            xcodebuild -downloadPlatform iOS -buildVersion 26.2
           fi
 
       - name: Select or create and boot an iPhone Simulator
@@ -66,7 +65,7 @@ jobs:
           import json, sys
           data = json.load(sys.stdin)
           for runtime, devices in sorted(data.get("devices", {}).items(), reverse=True):
-              if "iOS" not in runtime:
+              if not runtime.endswith("iOS-26-2"):
                   continue
               for d in devices:
                   if d.get("isAvailable") and "iPhone" in d.get("name", ""):
@@ -76,7 +75,7 @@ jobs:
           if [ -z "$SIM_UDID" ]; then
             RUNTIME_ID=$(xcrun simctl list runtimes iOS -j | python3 -c '
             import json, sys
-            rts = [r for r in json.load(sys.stdin).get("runtimes", []) if r.get("isAvailable") and "iOS" in r.get("identifier", "")]
+            rts = [r for r in json.load(sys.stdin).get("runtimes", []) if r.get("isAvailable") and r["identifier"].endswith("iOS-26-2")]
             print(rts[-1]["identifier"] if rts else "")
             ')
             SIM_UDID=$(xcrun simctl create "CI-iPhone" "com.apple.CoreSimulator.SimDeviceType.iPhone-16" "$RUNTIME_ID")

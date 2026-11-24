@@ -9,22 +9,32 @@ public actor DiskChunkCache {
     private static let largeDiskThresholdBytes: Int64 = 4 * 1024 * 1024 * 1024
 
     public let rootDirectory: URL
-    public let maxCacheBytes: Int64
+    public private(set) var maxCacheBytes: Int64
+    private let explicitBudget: Int64?
+    private var isWarm = false
     private var totalCachedBytes: Int64 = 0
     private var chunkFiles: [String: (url: URL, size: Int64, touchedAt: TimeInterval)] = [:]
 
     public init(rootDirectory: URL, maxCacheBytes: Int64? = nil) {
         self.rootDirectory = rootDirectory
-        try? FileManager.default.createDirectory(at: rootDirectory, withIntermediateDirectories: true)
-        if let explicit = maxCacheBytes {
-            self.maxCacheBytes = explicit
-        } else {
-            let freeSpace = Self.availableDiskBytes(at: rootDirectory)
-            self.maxCacheBytes = Self.calculateVideoCacheMaxBytes(usableSpaceBytes: freeSpace)
+        self.explicitBudget = maxCacheBytes
+        self.maxCacheBytes = maxCacheBytes ?? Self.baseMaxBytes
+    }
+
+    public func warmUp() {
+        guard !isWarm else { return }
+        var directory = rootDirectory
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? directory.setResourceValues(values)
+        if explicitBudget == nil {
+            maxCacheBytes = Self.calculateVideoCacheMaxBytes(usableSpaceBytes: Self.availableDiskBytes(at: directory))
         }
-        let scanned = Self.scanExistingChunks(in: rootDirectory)
+        let scanned = Self.scanExistingChunks(in: directory)
         self.chunkFiles = scanned.entries
         self.totalCachedBytes = scanned.totalBytes
+        isWarm = true
     }
 
     public static func buildEpisodeCacheKey(
@@ -144,11 +154,13 @@ public actor DiskChunkCache {
     // MARK: - Chunk Read / Write
 
     public func hasChunk(cacheKey: String, chunkOffset: Int64) -> Bool {
+        warmUp()
         let id = chunkId(cacheKey: cacheKey, chunkOffset: chunkOffset)
         return chunkFiles[id] != nil
     }
 
     public func readChunk(cacheKey: String, chunkOffset: Int64) -> Data? {
+        warmUp()
         let id = chunkId(cacheKey: cacheKey, chunkOffset: chunkOffset)
         guard var entry = chunkFiles[id] else { return nil }
         guard let data = try? Data(contentsOf: entry.url) else {
@@ -163,6 +175,7 @@ public actor DiskChunkCache {
 
     public func writeChunk(cacheKey: String, chunkOffset: Int64, data: Data) {
         guard !data.isEmpty else { return }
+        warmUp()
         let id = chunkId(cacheKey: cacheKey, chunkOffset: chunkOffset)
         let fileURL = rootDirectory.appendingPathComponent("\(id).chk")
         do {
@@ -180,10 +193,12 @@ public actor DiskChunkCache {
     }
 
     public func totalSizeBytes() -> Int64 {
-        totalCachedBytes
+        warmUp()
+        return totalCachedBytes
     }
 
     public func clearAll() {
+        warmUp()
         for entry in chunkFiles.values {
             try? FileManager.default.removeItem(at: entry.url)
         }

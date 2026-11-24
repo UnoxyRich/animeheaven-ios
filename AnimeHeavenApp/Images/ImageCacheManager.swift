@@ -14,13 +14,15 @@ public actor ImageCacheManager {
     private let session: URLSession
     private let memoryCache = NSCache<NSString, UIImage>()
     private var inFlight: [String: Task<UIImage?, Never>] = [:]
-    private var diskIndex: [String: (url: URL, size: Int64, touchedAt: TimeInterval)] = [:]
+    private typealias DiskEntries = [String: (url: URL, size: Int64, touchedAt: TimeInterval)]
+    private var diskIndex: DiskEntries = [:]
     private var totalDiskBytes: Int64 = 0
+    private var warmupTask: Task<(entries: DiskEntries, total: Int64), Never>?
+    private var didWarmUp = false
+    private var clearing = false
 
     public init(diskDirectory: URL) {
         self.diskDirectory = diskDirectory
-        try? FileManager.default.createDirectory(at: diskDirectory, withIntermediateDirectories: true)
-
         let physMem = ProcessInfo.processInfo.physicalMemory
         let isLowRam = physMem <= 3 * 1024 * 1024 * 1024
         let fraction = isLowRam ? 0.14 : 0.20
@@ -38,13 +40,31 @@ public actor ImageCacheManager {
         ]
         self.session = URLSession(configuration: config)
 
-        let scanned = Self.scanDisk(in: diskDirectory)
-        self.diskIndex = scanned.entries
-        self.totalDiskBytes = scanned.total
+    }
+
+    public func warmUp() async {
+        if didWarmUp { return }
+        let task: Task<(entries: DiskEntries, total: Int64), Never>
+        if let existing = warmupTask {
+            task = existing
+        } else {
+            task = Task.detached(priority: .utility) { [diskDirectory] in
+                try? FileManager.default.createDirectory(at: diskDirectory, withIntermediateDirectories: true)
+                return Self.scanDisk(in: diskDirectory)
+            }
+            warmupTask = task
+        }
+        let scanned = await task.value
+        if didWarmUp { return }
+        diskIndex = scanned.entries
+        totalDiskBytes = scanned.total
+        didWarmUp = true
+        warmupTask = nil
     }
 
     public func image(for urlString: String, targetSize: ImageTargetSize) async -> UIImage? {
-        guard !urlString.isEmpty, let url = URL(string: urlString) else { return nil }
+        guard !clearing, !Task.isCancelled, !urlString.isEmpty,
+              let url = URL(string: urlString), url.scheme?.lowercased() == "https" else { return nil }
         let memKey = "\(urlString)#\(targetSize.widthPx)x\(targetSize.heightPx)"
         if let cached = memoryCache.object(forKey: memKey as NSString) {
             return cached
@@ -54,23 +74,48 @@ public actor ImageCacheManager {
         }
 
         let diskKey = Self.fnv1a64Hex(urlString)
+        let maxPixels = targetSize.maxPixelDimension
         let task = Task<UIImage?, Never> {
+            await warmUp()
+            guard !Task.isCancelled else { return nil }
             // 1. Check disk cache
-            if let diskData = readDisk(key: diskKey),
-               let img = Self.downsample(data: diskData, maxPixelSize: targetSize.maxPixelDimension) {
-                storeInMemory(img, key: memKey)
-                return img
+            if let entry = diskIndex[diskKey] {
+                let img = await Self.runIO {
+                    guard !Task.isCancelled, let data = try? Data(contentsOf: entry.url) else { return nil as UIImage? }
+                    return Self.downsample(data: data, maxPixelSize: maxPixels)
+                }
+                guard !Task.isCancelled else { return nil }
+                if let img {
+                    diskIndex[diskKey]?.touchedAt = Date().timeIntervalSince1970
+                    storeInMemory(img, key: memKey)
+                    return img
+                }
             }
             // 2. Fetch over network
             do {
                 let (data, response) = try await session.data(from: url)
                 guard let http = response as? HTTPURLResponse,
                       (200..<300).contains(http.statusCode),
-                      !data.isEmpty,
-                      let img = Self.downsample(data: data, maxPixelSize: targetSize.maxPixelDimension) else {
+                      !data.isEmpty, !Task.isCancelled else {
                     return nil
                 }
-                writeDisk(key: diskKey, data: data)
+                let fileURL = diskDirectory.appendingPathComponent("\(diskKey).img")
+                let (img, wrote) = await Self.runIO {
+                    guard !Task.isCancelled,
+                          let image = Self.downsample(data: data, maxPixelSize: maxPixels) else {
+                        return (nil as UIImage?, false)
+                    }
+                    let wrote = !Task.isCancelled && ((try? data.write(to: fileURL, options: .atomic)) != nil)
+                    return (image, wrote)
+                }
+                if wrote {
+                    if let old = diskIndex[diskKey] { totalDiskBytes -= old.size }
+                    let size = Int64(data.count)
+                    diskIndex[diskKey] = (fileURL, size, Date().timeIntervalSince1970)
+                    totalDiskBytes += size
+                    evictDiskIfNeeded()
+                }
+                guard !Task.isCancelled, let img else { return nil }
                 storeInMemory(img, key: memKey)
                 return img
             } catch {
@@ -98,7 +143,15 @@ public actor ImageCacheManager {
         memoryCache.removeAllObjects()
     }
 
-    public func clearDiskCache() {
+    public func clearDiskCache() async {
+        if clearing { return }
+        clearing = true
+        defer { clearing = false }
+        await warmUp()
+        let pending = Array(inFlight.values)
+        for task in pending { task.cancel() }
+        for task in pending { _ = await task.value }
+
         memoryCache.removeAllObjects()
         for entry in diskIndex.values {
             try? FileManager.default.removeItem(at: entry.url)
@@ -107,8 +160,9 @@ public actor ImageCacheManager {
         totalDiskBytes = 0
     }
 
-    public func diskSizeBytes() -> Int64 {
-        totalDiskBytes
+    public func diskSizeBytes() async -> Int64 {
+        await warmUp()
+        return totalDiskBytes
     }
 
     private func storeInMemory(_ image: UIImage, key: String) {
@@ -116,32 +170,9 @@ public actor ImageCacheManager {
         memoryCache.setObject(image, forKey: key as NSString, cost: max(1, cost))
     }
 
-    private func readDisk(key: String) -> Data? {
-        guard var entry = diskIndex[key] else { return nil }
-        guard let data = try? Data(contentsOf: entry.url) else {
-            diskIndex.removeValue(forKey: key)
-            totalDiskBytes = max(0, totalDiskBytes - entry.size)
-            return nil
-        }
-        entry.touchedAt = Date().timeIntervalSince1970
-        diskIndex[key] = entry
-        return data
-    }
-
-    private func writeDisk(key: String, data: Data) {
-        let fileURL = diskDirectory.appendingPathComponent("\(key).img")
-        do {
-            try data.write(to: fileURL, options: .atomic)
-            let size = Int64(data.count)
-            if let old = diskIndex[key] {
-                totalDiskBytes = max(0, totalDiskBytes - old.size)
-            }
-            diskIndex[key] = (url: fileURL, size: size, touchedAt: Date().timeIntervalSince1970)
-            totalDiskBytes += size
-            evictDiskIfNeeded()
-        } catch {
-            // Non-fatal
-        }
+    private nonisolated static func runIO<Value: Sendable>(_ work: @escaping @Sendable () -> Value) async -> Value {
+        let task = Task.detached(priority: .utility, operation: work)
+        return await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
     }
 
     private func evictDiskIfNeeded() {
