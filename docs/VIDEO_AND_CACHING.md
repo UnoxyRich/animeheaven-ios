@@ -58,7 +58,7 @@ AVPlayer ──▶ http://127.0.0.1:<port>/stream/<token>/<sessionId>.mp4 (HTTP/
 - **[`MirrorHealthTracker.swift`](../Packages/AnimeHeavenCore/Sources/AnimeHeavenCore/Video/MirrorHealthTracker.swift)**: Tracks RTT latency, `60s` failure cooldown, EWMA `avgBytesPerSec`, and `< 1 MB` stub-clip penalties with strictly transitive ranking and throttled `UserDefaults` persistence.
 - **[`DiskChunkCache.swift`](../Packages/AnimeHeavenCore/Sources/AnimeHeavenCore/Video/DiskChunkCache.swift)**: Shared `ep:<episodeKey>:<contentLength>` key across mirrors (`512 MB` cap, `1 GB` when free space >= `4 GB`), plus `containsMoovBox(_:)` to warm trailing chunks of non-faststart MP4s.
 - **[`StreamingChunkBooster.swift`](../Packages/AnimeHeavenCore/Sources/AnimeHeavenCore/Video/StreamingChunkBooster.swift)**: Races `Range: bytes=0-0` probes (`probeMirrorsForPlayback`) to unblock playback on the **first** valid full-length mirror (~80–150 ms), fetches `512 KB` chunks in parallel, and handles seek wakeups + background next-episode warming (`AnimePreloader`).
-- **Fallback**: If a mirror omits `Content-Length` or fails probe sizing, `PlayerViewModel` falls back cleanly to direct `AVURLAsset(url:options: ["AVURLAssetHTTPHeaderFieldsKey": ...])`.
+- **Fallback**: A mirror without a verified range length streams through the same loopback proxy with upstream headers, but bypasses the shared chunk cache.
 
 ---
 

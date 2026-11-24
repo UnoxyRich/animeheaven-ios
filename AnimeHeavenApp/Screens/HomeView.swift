@@ -31,7 +31,7 @@ struct HomeView: View {
                         NetflixCategoryPillStrip(
                             seasonLabel: feed.seasonLabel,
                             onSeasonal: {
-                                let path = feed.seasonPath ?? "2025fall.php"
+                                guard let path = feed.seasonPath, !path.isEmpty else { return }
                                 let label = feed.seasonLabel ?? "Season"
                                 onOpenSeasonal(path, label)
                             },

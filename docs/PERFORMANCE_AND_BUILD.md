@@ -33,8 +33,8 @@ swift run AnimeHeavenCoreSelfTest
 - **Live `LocalStreamProxyServer`** (`NWListener` HTTP `206 Partial Content` cross-chunk reads, `HEAD`, `403` token validation)
 - `@MainActor` `SearchViewModel` & `SettingsStore` persistence
 
-### With Xcode 16+ / GitHub Actions (`macos-15`)
-- Run `swift test` in `Packages/AnimeHeavenCore` (executes all 9 Swift Testing suites under `Tests/AnimeHeavenCoreTests/`).
+### With Xcode / GitHub Actions (`macos-15`)
+- Run `swift test` in `Packages/AnimeHeavenCore` with Xcode selected. The CI simulator is pinned to Xcode 26.2 and iOS 26.2 to exercise native Liquid Glass; older iOS versions use the material fallback.
 - Build the iOS app target:
   ```bash
   xcodebuild build \
@@ -50,8 +50,8 @@ swift run AnimeHeavenCoreSelfTest
 ## 3. Build & App Store / Sideload Notes
 
 - **ATS & Loopback Proxy**: `Info.plist` sets `NSAllowsArbitraryLoads = false` and `NSAllowsLocalNetworking = true` so `AVPlayer` can connect to `http://127.0.0.1:<ephemeralPort>` while all remote URLs stay strictly HTTPS.
-- **PiP Requirement**: `UIBackgroundModes` includes `audio`, and `AnimeHeavenAppDelegate` activates `AVAudioSession` with `.playback` / `.moviePlayback`. Removing either disables iOS Picture-in-Picture.
-- **Privacy Manifest**: [`PrivacyInfo.xcprivacy`](../AnimeHeavenApp/Resources/PrivacyInfo.xcprivacy) declares `UserDefaults` (`CA92.1`) and disk space (`E174.1`) usage.
+- **PiP Requirement**: `UIBackgroundModes` includes `audio`. The player activates `AVAudioSession` in `.playback` / `.moviePlayback` when ready, not at app launch.
+- **Privacy Manifest**: [`PrivacyInfo.xcprivacy`](../AnimeHeavenApp/Resources/PrivacyInfo.xcprivacy) declares UserDefaults (`CA92.1`), disk space (`E174.1`), and cache file timestamps (`C617.1`).
 - **Regenerating `.xcodeproj`**: If you add new Swift files under `AnimeHeavenApp/`, either add them in Xcode or run `xcodegen generate` using [`project.yml`](../project.yml).
 
 ---

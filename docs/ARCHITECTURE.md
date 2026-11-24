@@ -14,7 +14,7 @@ This document describes startup wiring, dependency management, navigation, theme
 ## 2. Startup, Lazy DI & Memory Handling
 
 - [`AnimeHeavenApp.swift`](../AnimeHeavenApp/App/AnimeHeavenApp.swift) configures `AVAudioSession` (`category = .playback`, `mode = .moviePlayback`, `[.allowAirPlay]`) in `AnimeHeavenAppDelegate.application(_:didFinishLaunchingWithOptions:)` so video audio plays through the hardware mute switch and native Picture-in-Picture works.
-- [`AppContainer.swift`](../AnimeHeavenApp/App/AppContainer.swift) initializes all heavy subsystems (`client`, `database`, `networkPolicy`, `repository`, `skipTimesClient`, `mirrorHealthTracker`, `diskChunkCache`, `chunkBooster`, `proxyServer`, `imageCacheManager`, `preloader`) lazily.
+- [`AppContainer.swift`](../AnimeHeavenApp/App/AppContainer.swift) opens SQLite off the main actor at startup, initializes other dependencies on demand, and warms image and video caches asynchronously.
 - `warmUpOnStartup()` executes detached off the main thread:
   1. Preconnects `animeheaven.me` + learned top healthy CDN hosts (`mirrorHealthTracker.topHealthyHosts(limit: 2)`).
   2. Hydrates `home_snapshot.v1.json` (`repository.hydrateHomeFast()`) and preloads the top 2 Hero banners + 6 Popular cards at exact `ImageTargetSize` dimensions.

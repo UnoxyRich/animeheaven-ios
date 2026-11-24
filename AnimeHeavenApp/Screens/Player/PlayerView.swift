@@ -442,8 +442,8 @@ struct PlayerView: View {
 
             // Center Transport Controls
             HStack(spacing: 36) {
+                let step = viewModel.settingsStore.doubleTapSeekSeconds
                 Button {
-                    let step = viewModel.settingsStore.doubleTapSeekSeconds
                     seekBy(deltaMs: -Int64(step) * 1000, label: "-\(step)s")
                 } label: {
                     Image(systemName: "gobackward")
@@ -452,6 +452,7 @@ struct PlayerView: View {
                         .padding(12)
                         .background(Color.black.opacity(0.45), in: Circle())
                 }
+                .accessibilityLabel("Back \(step) seconds")
 
                 Button { togglePlayPause() } label: {
                     Image(systemName: isPlaying ? "pause.fill" : "play.fill")
@@ -460,9 +461,9 @@ struct PlayerView: View {
                         .padding(20)
                         .background(palette.crimson, in: Circle())
                 }
+                .accessibilityLabel(isPlaying ? "Pause" : "Play")
 
                 Button {
-                    let step = viewModel.settingsStore.doubleTapSeekSeconds
                     seekBy(deltaMs: Int64(step) * 1000, label: "+\(step)s")
                 } label: {
                     Image(systemName: "goforward")
@@ -471,6 +472,7 @@ struct PlayerView: View {
                         .padding(12)
                         .background(Color.black.opacity(0.45), in: Circle())
                 }
+                .accessibilityLabel("Forward \(step) seconds")
             }
 
             Spacer()

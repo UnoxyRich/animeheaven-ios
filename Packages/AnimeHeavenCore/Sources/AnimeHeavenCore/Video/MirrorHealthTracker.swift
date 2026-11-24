@@ -103,6 +103,7 @@ public final class MirrorHealthTracker: @unchecked Sendable {
 
     private let lock = NSLock()
     private let defaults: UserDefaults?
+    private let persistenceQueue = DispatchQueue(label: "me.animeheaven.ios.mirror-health")
     private let clockMs: @Sendable () -> Int64
     private var statsByHost: [String: HostStats] = [:]
     private var lastPersistedAtMs: [String: Int64] = [:]
@@ -235,12 +236,13 @@ public final class MirrorHealthTracker: @unchecked Sendable {
         let keys = statsByHost.keys.map { "\(Self.defaultsKeyPrefix)\($0)" }
         statsByHost.removeAll()
         lastPersistedAtMs.removeAll()
-        lock.unlock()
-        if let defaults {
-            for k in keys {
-                defaults.removeObject(forKey: k)
+        if !keys.isEmpty {
+            persistenceQueue.async { [weak self] in
+                guard let defaults = self?.defaults else { return }
+                for key in keys { defaults.removeObject(forKey: key) }
             }
         }
+        lock.unlock()
     }
 
     /// Strictly transitive tier sort key:
@@ -270,12 +272,15 @@ public final class MirrorHealthTracker: @unchecked Sendable {
 
     private func saveLocked(host: String, stats: HostStats, forcePersist: Bool) {
         statsByHost[host] = stats
-        guard let defaults else { return }
+        guard defaults != nil else { return }
         let now = clockMs()
         let prev = lastPersistedAtMs[host] ?? 0
         if forcePersist || (now - prev) >= Self.persistThrottleMs {
             lastPersistedAtMs[host] = now
-            defaults.set(stats.encode(), forKey: "\(Self.defaultsKeyPrefix)\(host)")
+            let encoded = stats.encode()
+            persistenceQueue.async { [weak self] in
+                self?.defaults?.set(encoded, forKey: "\(Self.defaultsKeyPrefix)\(host)")
+            }
         }
     }
 
