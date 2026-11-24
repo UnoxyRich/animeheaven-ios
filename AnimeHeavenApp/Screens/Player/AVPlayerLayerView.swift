@@ -30,7 +30,6 @@ public enum VideoResizeMode: String, CaseIterable, Sendable {
 public final class PipCoordinator: NSObject, AVPictureInPictureControllerDelegate {
     private var pipController: AVPictureInPictureController?
     public var onPipStateChanged: ((Bool) -> Void)?
-    public var onRestoreUserInterface: ((@escaping (Bool) -> Void) -> Void)?
 
     public var isPipSupported: Bool {
         AVPictureInPictureController.isPictureInPictureSupported()
@@ -75,13 +74,7 @@ public final class PipCoordinator: NSObject, AVPictureInPictureControllerDelegat
         _ pictureInPictureController: AVPictureInPictureController,
         restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void
     ) {
-        MainActor.assumeIsolated {
-            if let handler = self.onRestoreUserInterface {
-                handler(completionHandler)
-            } else {
-                completionHandler(true)
-            }
-        }
+        completionHandler(true)
     }
 }
 
