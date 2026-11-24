@@ -2,21 +2,32 @@ name: iOS Build, Core Tests & Simulator UI Tests
 
 on:
   push:
-    branches: [ main, netflix-ui ]
+    branches: [ main, netflix-ui, "fix/**" ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   core-tests:
     name: AnimeHeavenCore SwiftPM Tests
     runs-on: macos-15
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Select Xcode 16.4
+        run: sudo xcode-select --switch /Applications/Xcode_16.4.app/Contents/Developer
 
       - name: Run SwiftPM unit tests, release build & self-test
         working-directory: Packages/AnimeHeavenCore
         run: |
+          swift build -Xswiftc -strict-concurrency=complete
           swift test
           swift build -c release
           swift run AnimeHeavenCoreSelfTest
@@ -24,9 +35,20 @@ jobs:
   ios-simulator-ui-tests:
     name: Real iOS Simulator Build, XCUITests & Screenshots
     runs-on: macos-15
+    timeout-minutes: 30
     needs: core-tests
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Select Xcode 16.4
+        run: sudo xcode-select --switch /Applications/Xcode_16.4.app/Contents/Developer
+
+      - name: Build unsigned iOS Release
+        run: |
+          xcodebuild build \
+            -project AnimeHeaven.xcodeproj \
+            -scheme AnimeHeaven -configuration Release \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO
 
       - name: Inspect Xcode & ensure iOS Simulator runtime is installed
         run: |
@@ -114,16 +136,19 @@ jobs:
           PY
           ls -lh screenshots/
 
+      - name: Require the complete iOS walkthrough
+        run: test "$(find screenshots -maxdepth 1 -name '*.png' | wc -l)" -ge 8
+
       - name: Upload iOS App Screenshots
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: animeheaven-ios-screenshots
           path: screenshots/*.png
 
       - name: Upload XCUITest Result Bundle
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: animeheaven-ios-ui-tests
           path: TestResults.xcresult

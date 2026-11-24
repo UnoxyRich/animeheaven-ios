@@ -11,6 +11,7 @@
 		3F6A673D8D9E5C9DDD916A0D /* AppContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 531D05CFA451911730B0D524 /* AppContainer.swift */; };
 		E5BFF92FB3A30F7B77F39D95 /* AhCoverImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39E00463B5D17D36E818F88E /* AhCoverImage.swift */; };
 		58FFB3F96D26E2DE7A371D1D /* AnimeCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D4C1842F06E40686DB0B901 /* AnimeCards.swift */; };
+		912D4CC5BB4A402CBEAD7602 /* LiquidGlass.swift in Sources */ = {isa = PBXBuildFile; fileRef = 912D4CC5BB4A402CBEAD7601 /* LiquidGlass.swift */; };
 		A452FDFB48DEA3A98E712D30 /* ImageCacheManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93A7D263AB55F1D5E7D00395 /* ImageCacheManager.swift */; };
 		FA4F8E71EACB56517B49900C /* RootTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64AE9FB974B40AB18DA74846 /* RootTabView.swift */; };
 		7A64F41E3C71CDB27BC7D880 /* AnimeDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8530C5CF20E0EA8AB0659F2 /* AnimeDetailView.swift */; };
@@ -46,6 +47,7 @@
 		531D05CFA451911730B0D524 /* AppContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AnimeHeavenApp/App/AppContainer.swift"; sourceTree = SOURCE_ROOT; };
 		39E00463B5D17D36E818F88E /* AhCoverImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AnimeHeavenApp/Components/AhCoverImage.swift"; sourceTree = SOURCE_ROOT; };
 		9D4C1842F06E40686DB0B901 /* AnimeCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AnimeHeavenApp/Components/AnimeCards.swift"; sourceTree = SOURCE_ROOT; };
+		912D4CC5BB4A402CBEAD7601 /* LiquidGlass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AnimeHeavenApp/Components/LiquidGlass.swift"; sourceTree = SOURCE_ROOT; };
 		93A7D263AB55F1D5E7D00395 /* ImageCacheManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AnimeHeavenApp/Images/ImageCacheManager.swift"; sourceTree = SOURCE_ROOT; };
 		64AE9FB974B40AB18DA74846 /* RootTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AnimeHeavenApp/Navigation/RootTabView.swift"; sourceTree = SOURCE_ROOT; };
 		F8530C5CF20E0EA8AB0659F2 /* AnimeDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AnimeHeavenApp/Screens/AnimeDetailView.swift"; sourceTree = SOURCE_ROOT; };
@@ -104,6 +106,7 @@
 				531D05CFA451911730B0D524 /* AppContainer.swift */,
 				39E00463B5D17D36E818F88E /* AhCoverImage.swift */,
 				9D4C1842F06E40686DB0B901 /* AnimeCards.swift */,
+				912D4CC5BB4A402CBEAD7601 /* LiquidGlass.swift */,
 				93A7D263AB55F1D5E7D00395 /* ImageCacheManager.swift */,
 				64AE9FB974B40AB18DA74846 /* RootTabView.swift */,
 				F8530C5CF20E0EA8AB0659F2 /* AnimeDetailView.swift */,
@@ -249,6 +252,7 @@
 				3F6A673D8D9E5C9DDD916A0D /* AppContainer.swift in Sources */,
 				E5BFF92FB3A30F7B77F39D95 /* AhCoverImage.swift in Sources */,
 				58FFB3F96D26E2DE7A371D1D /* AnimeCards.swift in Sources */,
+				912D4CC5BB4A402CBEAD7602 /* LiquidGlass.swift in Sources */,
 				A452FDFB48DEA3A98E712D30 /* ImageCacheManager.swift in Sources */,
 				FA4F8E71EACB56517B49900C /* RootTabView.swift in Sources */,
 				7A64F41E3C71CDB27BC7D880 /* AnimeDetailView.swift in Sources */,
