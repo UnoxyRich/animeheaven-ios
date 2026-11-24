@@ -103,7 +103,8 @@ struct HomeView: View {
                             }
                         }
                     }
-                    .padding(.vertical, 12)
+                    .padding(.top, 12)
+                    .padding(.bottom, 92)
                 }
                 .refreshable {
                     await viewModel.refreshAsync()
@@ -111,16 +112,10 @@ struct HomeView: View {
             }
         }
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
-                AhBrandToolbarTitle(
-                    seasonLabel: viewModel.feed?.seasonLabel,
-                    onTapSeason: {
-                        let path = viewModel.feed?.seasonPath ?? "2025fall.php"
-                        let label = viewModel.feed?.seasonLabel ?? "Season"
-                        onOpenSeasonal(path, label)
-                    }
-                )
+                AhBrandToolbarTitle(title: "For You")
             }
             ToolbarItem(placement: .topBarTrailing) {
                 AhTopActionButtons(

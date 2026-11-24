@@ -70,8 +70,17 @@ struct RootTabView: View {
         _bookmarksVM = State(initialValue: BookmarksViewModel(repository: container.repository))
     }
 
+    private var isShowingRootTab: Bool {
+        switch selectedTab {
+        case .home: return homePath.isEmpty
+        case .newReleases: return newPath.isEmpty
+        case .popular: return popularPath.isEmpty
+        case .bookmarks: return bookmarksPath.isEmpty
+        }
+    }
+
     var body: some View {
-        ZStack {
+        ZStack(alignment: .bottom) {
             TabView(selection: $selectedTab) {
                 NavigationStack(path: $homePath) {
                     HomeView(
@@ -85,9 +94,9 @@ struct RootTabView: View {
                         onOpenRandom: { openRandom() },
                         onOpenSettings: { push(.settings) }
                     )
+                    .toolbar(.hidden, for: .tabBar)
                     .navigationDestination(for: AppDestination.self) { destinationView($0) }
                 }
-                .tabItem { Label("Schedule", systemImage: "calendar") }
                 .tag(AppTab.home)
 
                 NavigationStack(path: $newPath) {
@@ -102,9 +111,9 @@ struct RootTabView: View {
                         onOpenRandom: { openRandom() },
                         onOpenSettings: { push(.settings) }
                     )
+                    .toolbar(.hidden, for: .tabBar)
                     .navigationDestination(for: AppDestination.self) { destinationView($0) }
                 }
-                .tabItem { Label("New", systemImage: "sparkles") }
                 .tag(AppTab.newReleases)
 
                 NavigationStack(path: $popularPath) {
@@ -119,9 +128,9 @@ struct RootTabView: View {
                         onOpenRandom: { openRandom() },
                         onOpenSettings: { push(.settings) }
                     )
+                    .toolbar(.hidden, for: .tabBar)
                     .navigationDestination(for: AppDestination.self) { destinationView($0) }
                 }
-                .tabItem { Label("Popular", systemImage: "flame.fill") }
                 .tag(AppTab.popular)
 
                 NavigationStack(path: $bookmarksPath) {
@@ -136,12 +145,17 @@ struct RootTabView: View {
                         onOpenRandom: { openRandom() },
                         onOpenSettings: { push(.settings) }
                     )
+                    .toolbar(.hidden, for: .tabBar)
                     .navigationDestination(for: AppDestination.self) { destinationView($0) }
                 }
-                .tabItem { Label("Bookmarks", systemImage: "bookmark.fill") }
                 .tag(AppTab.bookmarks)
             }
-            .tint(palette.isLight ? palette.crimson : .white)
+            .tint(palette.crimson)
+
+            if isShowingRootTab {
+                FloatingLiquidGlassTabBar(selectedTab: $selectedTab)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
 
             if isResolvingRandom {
                 Color.black.opacity(0.45).ignoresSafeArea()
@@ -149,6 +163,7 @@ struct RootTabView: View {
                     .padding(20)
                     .background(palette.surfaceElevated, in: RoundedRectangle(cornerRadius: 14))
                     .foregroundStyle(palette.textPrimary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .fullScreenCover(item: $activePlayer) { presentation in

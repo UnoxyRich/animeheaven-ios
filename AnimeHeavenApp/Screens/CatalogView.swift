@@ -29,7 +29,7 @@ struct CatalogView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
-                            Text(viewModel.title)
+                            Text(isRootTab ? (viewModel.kind == .popular ? "Ranked by Views" : "Latest Releases") : viewModel.title)
                                 .font(.title3.weight(.bold))
                                 .foregroundStyle(palette.textPrimary)
                             Spacer()
@@ -41,7 +41,7 @@ struct CatalogView: View {
                                         .font(.subheadline.weight(.semibold))
                                         .foregroundStyle(palette.textPrimary)
                                         .padding(8)
-                                        .background(palette.surfaceElevated, in: Circle())
+                                        .liquidGlass(in: Circle())
                                 }
                             }
                         }
@@ -73,7 +73,8 @@ struct CatalogView: View {
                             .padding(.horizontal, 16)
                         }
                     }
-                    .padding(.vertical, 12)
+                    .padding(.top, 12)
+                    .padding(.bottom, isRootTab ? 92 : 20)
                 }
                 .refreshable {
                     await viewModel.refreshAsync()
@@ -82,13 +83,11 @@ struct CatalogView: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .navigationTitle(isRootTab ? "" : viewModel.title)
+        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
         .toolbar {
             if isRootTab {
                 ToolbarItem(placement: .topBarLeading) {
-                    AhBrandToolbarTitle(
-                        seasonLabel: seasonLabel,
-                        onTapSeason: onOpenSeasonal
-                    )
+                    AhBrandToolbarTitle(title: viewModel.title)
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {

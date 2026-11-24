@@ -35,6 +35,8 @@ struct SettingsView: View {
                                 }
                             }
                         }
+                        .accessibilityLabel(theme.displayName)
+                        .accessibilityIdentifier("theme.\(theme.rawValue)")
                     }
 
                     Picker("Default Feed View", selection: Binding(
@@ -52,14 +54,17 @@ struct SettingsView: View {
                         get: { settings.autoLandscapePlayer },
                         set: { settings.autoLandscapePlayer = $0 }
                     ))
+                    .tint(palette.crimson)
                     Toggle("Auto-Play Next Episode", isOn: Binding(
                         get: { settings.autoPlayNext },
                         set: { settings.autoPlayNext = $0 }
                     ))
+                    .tint(palette.crimson)
                     Toggle("Skip OP / ED Prompts", isOn: Binding(
                         get: { settings.skipPromptEnabled },
                         set: { settings.skipPromptEnabled = $0 }
                     ))
+                    .tint(palette.crimson)
                     Picker("Double-Tap Seek Step", selection: Binding(
                         get: { settings.doubleTapSeekSeconds },
                         set: { settings.doubleTapSeekSeconds = $0 }

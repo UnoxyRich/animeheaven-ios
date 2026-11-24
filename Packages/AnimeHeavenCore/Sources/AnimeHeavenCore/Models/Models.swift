@@ -58,7 +58,7 @@ public enum AhThemeId: String, Codable, Sendable, Hashable, CaseIterable, Identi
 
     public var displayName: String {
         switch self {
-        case .dark: return "Dark Crimson (Default)"
+        case .dark: return "Cinema Dark"
         case .darkIndigo: return "Midnight Indigo"
         case .darkGraphite: return "Graphite Slate"
         case .darkTealPlum: return "Teal Plum"
@@ -71,14 +71,14 @@ public enum AhThemeId: String, Codable, Sendable, Hashable, CaseIterable, Identi
 
     public var subtitle: String {
         switch self {
-        case .dark: return "Pure OLED black #000000 • Crimson #DD0021"
-        case .darkIndigo: return "Deep plum to midnight navy gradient"
-        case .darkGraphite: return "Charcoal metallic dark gradient"
-        case .darkTealPlum: return "Abyssal teal to dark plum gradient"
-        case .darkCrimsonVelvet: return "Deep maroon to dark plum gradient"
-        case .darkMagenta: return "Vibrant magenta to deep purple gradient"
-        case .darkTwilight: return "Slate blue to twilight indigo gradient"
-        case .light: return "White canvas • GhostWhite cards • Crimson accent"
+        case .dark: return "Deep charcoal • Netflix Red"
+        case .darkIndigo: return "Plum to midnight navy"
+        case .darkGraphite: return "Charcoal metallic dark"
+        case .darkTealPlum: return "Abyssal teal to plum"
+        case .darkCrimsonVelvet: return "Deep maroon to plum"
+        case .darkMagenta: return "Vibrant magenta to purple"
+        case .darkTwilight: return "Slate blue to indigo"
+        case .light: return "White canvas • Crisp cards"
         }
     }
 

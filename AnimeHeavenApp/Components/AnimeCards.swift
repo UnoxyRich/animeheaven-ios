@@ -1,11 +1,22 @@
 import SwiftUI
 import AnimeHeavenCore
 
-/// 2025/2026 Netflix Mobile Top Bar Brand: Condensed bold red "A" monogram + "For You".
+/// 2025/2026 Netflix Mobile Top Bar Brand: Condensed bold red "A" monogram + contextual title.
 struct AhBrandToolbarTitle: View {
     @Environment(\.ahPalette) private var palette
+    let title: String
     let seasonLabel: String?
-    let onTapSeason: () -> Void
+    let onTapSeason: (() -> Void)?
+
+    init(
+        title: String = "For You",
+        seasonLabel: String? = nil,
+        onTapSeason: (() -> Void)? = nil
+    ) {
+        self.title = title
+        self.seasonLabel = seasonLabel
+        self.onTapSeason = onTapSeason
+    }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -13,19 +24,19 @@ struct AhBrandToolbarTitle: View {
                 .font(.system(size: 26, weight: .black))
                 .foregroundStyle(palette.crimson)
 
-            Text("For You")
+            Text(title)
                 .font(.system(size: 19, weight: .heavy))
                 .foregroundStyle(palette.textPrimary)
+                .lineLimit(1)
 
-            if let seasonLabel, !seasonLabel.isEmpty {
+            if let seasonLabel, !seasonLabel.isEmpty, let onTapSeason {
                 Button(action: onTapSeason) {
                     Text(seasonLabel)
                         .font(.caption2.weight(.bold))
                         .foregroundStyle(palette.textPrimary)
                         .padding(.horizontal, 9)
                         .padding(.vertical, 4)
-                        .background(Color.white.opacity(palette.isLight ? 0.0 : 0.14), in: Capsule())
-                        .overlay(Capsule().stroke(palette.isLight ? palette.borderSubtle : Color.white.opacity(0.28), lineWidth: 1))
+                        .liquidGlass(in: Capsule())
                 }
                 .buttonStyle(.plain)
             }
@@ -33,6 +44,7 @@ struct AhBrandToolbarTitle: View {
     }
 }
 
+/// Liquid Glass grouped trailing toolbar capsule ([Search | Random | Settings]).
 struct AhTopActionButtons: View {
     @Environment(\.ahPalette) private var palette
     let onSearch: () -> Void
@@ -43,7 +55,7 @@ struct AhTopActionButtons: View {
         HStack(spacing: 14) {
             Button(action: onSearch) {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
             }
             .accessibilityLabel("Search")
@@ -51,7 +63,7 @@ struct AhTopActionButtons: View {
 
             Button(action: onRandom) {
                 Image(systemName: "shuffle")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
             }
             .accessibilityLabel("Random Anime")
@@ -59,16 +71,19 @@ struct AhTopActionButtons: View {
 
             Button(action: onSettings) {
                 Image(systemName: "gearshape.fill")
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
             }
             .accessibilityLabel("Settings")
             .accessibilityIdentifier("topbar.settings")
         }
+        .padding(.horizontal, 13)
+        .padding(.vertical, 7)
+        .liquidGlass(in: Capsule(), interactive: true)
     }
 }
 
-/// Netflix Mobile horizontal frosted category filter pills strip.
+/// Netflix Mobile horizontal Liquid Glass category filter pills strip.
 struct NetflixCategoryPillStrip: View {
     let seasonLabel: String?
     let onSeasonal: () -> Void
@@ -103,20 +118,14 @@ struct NetflixCategoryPillStrip: View {
             .foregroundStyle(palette.textPrimary)
             .padding(.horizontal, 13)
             .padding(.vertical, 7)
-            .background(
-                palette.isLight ? palette.surfaceElevated : Color.white.opacity(0.12),
-                in: Capsule()
-            )
-            .overlay(
-                Capsule()
-                    .stroke(palette.isLight ? palette.borderSubtle : Color.white.opacity(0.26), lineWidth: 1)
-            )
+            .liquidGlass(in: Capsule(), interactive: true)
         }
         .buttonStyle(.plain)
     }
 }
 
-/// Iconic Netflix Mobile Tall Framed Hero Billboard Card with White Play + Frosted Dark Details buttons.
+/// Iconic Netflix Mobile Tall Framed Hero Billboard Card with bounded image, ambient backdrop,
+/// dual White Play + Frosted Details buttons, and dedicated non-overlapping bottom page dots.
 struct HeroBannerPager: View {
     let banners: [BannerItem]
     let imageCache: ImageCacheManager
@@ -128,119 +137,138 @@ struct HeroBannerPager: View {
 
     var body: some View {
         if !banners.isEmpty {
-            TabView(selection: $currentIndex) {
-                ForEach(Array(banners.enumerated()), id: \.element.id) { idx, banner in
-                    ZStack(alignment: .bottom) {
-                        AhCoverImage(
-                            url: banner.bannerImageUrl,
-                            targetSize: .heroBanner,
-                            imageCache: imageCache
-                        )
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .clipped()
+            VStack(spacing: 10) {
+                TabView(selection: $currentIndex) {
+                    ForEach(Array(banners.enumerated()), id: \.element.id) { idx, banner in
+                        ZStack(alignment: .bottom) {
+                            LinearGradient(
+                                colors: [Color(hex: 0x2B090E), Color(hex: 0x141414)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
 
-                        LinearGradient(
-                            stops: [
-                                .init(color: .clear, location: 0.0),
-                                .init(color: Color.black.opacity(0.18), location: 0.40),
-                                .init(color: Color(hex: 0x0B0B0B).opacity(0.84), location: 0.72),
-                                .init(color: Color(hex: 0x0B0B0B).opacity(0.97), location: 1.0)
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
+                            AhCoverImage(
+                                url: banner.bannerImageUrl,
+                                targetSize: .heroBanner,
+                                imageCache: imageCache
+                            )
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                        // Top-left featured badge
-                        VStack {
-                            HStack {
-                                Text("#\(idx + 1) FEATURED")
-                                    .font(.system(size: 10, weight: .black))
-                                    .tracking(0.6)
-                                    .foregroundStyle(.white)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
-                                    .background(palette.crimson, in: RoundedRectangle(cornerRadius: 4))
+                            LinearGradient(
+                                stops: [
+                                    .init(color: .clear, location: 0.0),
+                                    .init(color: Color.black.opacity(0.18), location: 0.40),
+                                    .init(color: Color(hex: 0x0B0B0B).opacity(0.86), location: 0.72),
+                                    .init(color: Color(hex: 0x0B0B0B).opacity(0.97), location: 1.0)
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+
+                            // Top-left featured badge
+                            VStack {
+                                HStack {
+                                    Text("#\(idx + 1) FEATURED")
+                                        .font(.system(size: 10, weight: .black))
+                                        .tracking(0.6)
+                                        .foregroundStyle(.white)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(palette.crimson, in: RoundedRectangle(cornerRadius: 4))
+                                    Spacer()
+                                }
+                                .padding(14)
                                 Spacer()
                             }
-                            .padding(14)
-                            Spacer()
-                        }
 
-                        // Centered Netflix editorial metadata & side-by-side CTAs
-                        VStack(spacing: 8) {
-                            HStack(spacing: 6) {
-                                Text("A")
-                                    .font(.system(size: 15, weight: .black))
-                                    .foregroundStyle(palette.crimson)
-                                Text("S E R I E S")
-                                    .font(.system(size: 10, weight: .bold))
-                                    .tracking(2.2)
-                                    .foregroundStyle(Color.white.opacity(0.85))
-                            }
-
-                            Text(banner.title)
-                                .font(.title2.weight(.heavy))
-                                .foregroundStyle(.white)
-                                .lineLimit(2)
-                                .multilineTextAlignment(.center)
-
-                            Text("Trending Now  •  Subbed Anime  •  HD")
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(Color.white.opacity(0.82))
-
-                            HStack(spacing: 10) {
-                                Button {
-                                    onSelect(banner.animeId)
-                                } label: {
-                                    HStack(spacing: 6) {
-                                        Image(systemName: "play.fill")
-                                            .font(.subheadline)
-                                        Text("Play")
-                                            .font(.subheadline.weight(.heavy))
-                                    }
-                                    .foregroundStyle(.black)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 11)
-                                    .background(Color.white, in: RoundedRectangle(cornerRadius: 6))
+                            // Centered Netflix editorial metadata & side-by-side CTAs
+                            VStack(spacing: 8) {
+                                HStack(spacing: 6) {
+                                    Text("A")
+                                        .font(.system(size: 15, weight: .black))
+                                        .foregroundStyle(palette.crimson)
+                                    Text("S E R I E S")
+                                        .font(.system(size: 10, weight: .bold))
+                                        .tracking(2.2)
+                                        .foregroundStyle(Color.white.opacity(0.88))
                                 }
-                                .buttonStyle(.plain)
 
-                                Button {
-                                    onSelect(banner.animeId)
-                                } label: {
-                                    HStack(spacing: 6) {
-                                        Image(systemName: "info.circle")
-                                            .font(.subheadline.weight(.semibold))
-                                        Text("Details")
-                                            .font(.subheadline.weight(.bold))
-                                    }
+                                Text(banner.title)
+                                    .font(.title2.weight(.heavy))
                                     .foregroundStyle(.white)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 11)
-                                    .background(Color(hex: 0x303030).opacity(0.82), in: RoundedRectangle(cornerRadius: 6))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 6)
-                                            .stroke(Color.white.opacity(0.22), lineWidth: 1)
-                                    )
+                                    .lineLimit(2)
+                                    .multilineTextAlignment(.center)
+
+                                Text("Trending Now  •  Subbed Anime  •  HD")
+                                    .font(.caption.weight(.medium))
+                                    .foregroundStyle(Color.white.opacity(0.84))
+
+                                HStack(spacing: 10) {
+                                    Button {
+                                        onSelect(banner.animeId)
+                                    } label: {
+                                        HStack(spacing: 6) {
+                                            Image(systemName: "play.fill")
+                                                .font(.subheadline)
+                                            Text("Play")
+                                                .font(.subheadline.weight(.heavy))
+                                        }
+                                        .foregroundStyle(.black)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 11)
+                                        .background(Color.white, in: RoundedRectangle(cornerRadius: 6))
+                                    }
+                                    .buttonStyle(.plain)
+
+                                    Button {
+                                        onSelect(banner.animeId)
+                                    } label: {
+                                        HStack(spacing: 6) {
+                                            Image(systemName: "info.circle")
+                                                .font(.subheadline.weight(.semibold))
+                                            Text("Details")
+                                                .font(.subheadline.weight(.bold))
+                                        }
+                                        .foregroundStyle(.white)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 11)
+                                        .background(Color(hex: 0x303030).opacity(0.84), in: RoundedRectangle(cornerRadius: 6))
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 6)
+                                                .stroke(Color.white.opacity(0.24), lineWidth: 1)
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
                                 }
-                                .buttonStyle(.plain)
+                                .padding(.top, 4)
                             }
-                            .padding(.top, 4)
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 16)
                         }
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16)
+                                .stroke(Color.white.opacity(0.22), lineWidth: 1)
+                        )
                         .padding(.horizontal, 16)
-                        .padding(.bottom, 18)
+                        .tag(idx)
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16)
-                            .stroke(Color.white.opacity(0.22), lineWidth: 1)
-                    )
-                    .padding(.horizontal, 16)
-                    .tag(idx)
+                }
+                .tabViewStyle(.page(indexDisplayMode: .never))
+                .frame(height: 364)
+
+                // Dedicated non-overlapping Netflix capsule page indicator
+                if banners.count > 1 {
+                    HStack(spacing: 6) {
+                        ForEach(0..<banners.count, id: \.self) { idx in
+                            Capsule()
+                                .fill(idx == currentIndex ? palette.crimson : palette.textMuted.opacity(0.45))
+                                .frame(width: idx == currentIndex ? 18 : 6, height: 4)
+                                .animation(.easeInOut(duration: 0.2), value: currentIndex)
+                        }
+                    }
                 }
             }
-            .tabViewStyle(.page(indexDisplayMode: .automatic))
-            .frame(height: 368)
             .task(id: scenePhase) {
                 guard scenePhase == .active, banners.count > 1 else { return }
                 while !Task.isCancelled {
@@ -284,7 +312,6 @@ struct ContinueWatchingRow: View {
                                             imageCache: imageCache
                                         )
                                         .frame(width: 204, height: 115)
-                                        .clipped()
 
                                         LinearGradient(
                                             colors: [.clear, Color.black.opacity(0.75)],
@@ -405,7 +432,7 @@ struct PopularHorizontalStrip: View {
                 .padding(.horizontal, 16)
 
                 ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(spacing: 12) {
+                    LazyHStack(spacing: 10) {
                         ForEach(Array(items.enumerated()), id: \.element.id) { idx, card in
                             let rank = idx + 1
                             Button {
@@ -414,12 +441,12 @@ struct PopularHorizontalStrip: View {
                                 HStack(alignment: .bottom, spacing: 0) {
                                     if rank <= 10 {
                                         Text("\(rank)")
-                                            .font(.system(size: rank == 10 ? 58 : 72, weight: .black))
+                                            .font(.system(size: rank == 10 ? 54 : 68, weight: .black))
                                             .tracking(-3)
                                             .foregroundStyle(
-                                                palette.isLight ? Color.black.opacity(0.22) : Color.white.opacity(0.32)
+                                                palette.isLight ? Color.black.opacity(0.22) : Color.white.opacity(0.36)
                                             )
-                                            .offset(x: 10, y: 10)
+                                            .offset(x: 6, y: 4)
                                     }
 
                                     ZStack(alignment: .bottomLeading) {
@@ -429,11 +456,15 @@ struct PopularHorizontalStrip: View {
                                             imageCache: imageCache
                                         )
                                         .frame(width: 114, height: 164)
-                                        .clipped()
 
                                         LinearGradient(
-                                            colors: [.clear, Color.black.opacity(0.88)],
-                                            startPoint: .center,
+                                            stops: [
+                                                .init(color: .clear, location: 0.0),
+                                                .init(color: Color.black.opacity(0.32), location: 0.42),
+                                                .init(color: Color.black.opacity(0.84), location: 0.78),
+                                                .init(color: Color.black.opacity(0.95), location: 1.0)
+                                            ],
+                                            startPoint: .top,
                                             endPoint: .bottom
                                         )
 
@@ -476,6 +507,7 @@ struct PopularHorizontalStrip: View {
                         }
                     }
                     .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
                 }
             }
         }
@@ -503,7 +535,10 @@ struct ScheduleListRow: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8))
 
                     if !card.episodeLabel.isEmpty {
-                        Text("EP \(card.episodeLabel)")
+                        let badgeText = card.rankDirection != nil
+                            ? "#\(card.episodeLabel)"
+                            : "EP \(card.episodeLabel)"
+                        Text(badgeText)
                             .font(.system(size: 9, weight: .heavy))
                             .foregroundStyle(.white)
                             .padding(.horizontal, 5)
@@ -574,14 +609,17 @@ struct ScheduleGridCard: View {
                     )
 
                     LinearGradient(
-                        colors: [.clear, Color.black.opacity(0.72)],
+                        colors: [.clear, Color.black.opacity(0.76)],
                         startPoint: .center,
                         endPoint: .bottom
                     )
                     .clipShape(RoundedRectangle(cornerRadius: 8))
 
                     if !card.episodeLabel.isEmpty {
-                        Text("EP \(card.episodeLabel)")
+                        let badgeText = card.rankDirection != nil
+                            ? "#\(card.episodeLabel)"
+                            : "EP \(card.episodeLabel)"
+                        Text(badgeText)
                             .font(.system(size: 10, weight: .heavy))
                             .foregroundStyle(.white)
                             .padding(.horizontal, 6)

@@ -110,14 +110,16 @@ struct BookmarksView: View {
                             }
                         }
                     }
-                    .padding(.vertical, 12)
+                    .padding(.top, 12)
+                    .padding(.bottom, 92)
                 }
             }
         }
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
-                AhBrandToolbarTitle(seasonLabel: seasonLabel, onTapSeason: onOpenSeasonal)
+                AhBrandToolbarTitle(title: "My Bookmarks")
             }
             ToolbarItem(placement: .topBarTrailing) {
                 AhTopActionButtons(

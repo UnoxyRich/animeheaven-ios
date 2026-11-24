@@ -24,22 +24,23 @@ public struct AhCoverImage: View {
     }
 
     public var body: some View {
-        ZStack {
-            palette.surfaceElevated
-            if let img = loadedImage {
-                Image(uiImage: img)
-                    .resizable()
-                    .aspectRatio(contentMode: contentMode)
-                    .transition(.opacity.animation(.easeOut(duration: 0.12)))
+        // Render image inside `.overlay` on a flexible Color so `.fill` NEVER expands parent width/height.
+        palette.surfaceElevated
+            .overlay {
+                if let img = loadedImage {
+                    Image(uiImage: img)
+                        .resizable()
+                        .aspectRatio(contentMode: contentMode)
+                        .transition(.opacity.animation(.easeOut(duration: 0.14)))
+                }
             }
-        }
-        .clipped()
-        .task(id: "\(url)#\(targetSize.rawValue)") {
-            guard !url.isEmpty else {
-                loadedImage = nil
-                return
+            .clipped()
+            .task(id: "\(url)#\(targetSize.rawValue)") {
+                guard !url.isEmpty else {
+                    loadedImage = nil
+                    return
+                }
+                loadedImage = await imageCache.image(for: url, targetSize: targetSize)
             }
-            loadedImage = await imageCache.image(for: url, targetSize: targetSize)
-        }
     }
 }

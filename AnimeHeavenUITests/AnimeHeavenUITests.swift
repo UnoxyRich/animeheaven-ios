@@ -11,27 +11,27 @@ final class AnimeHeavenUITests: XCTestCase {
         let app = XCUIApplication()
         app.launch()
 
-        // 1. Home (Schedule)
-        let scheduleTab = app.tabBars.buttons["Schedule"]
+        // 1. Home (Schedule) — Liquid Glass Floating Tab Bar
+        let scheduleTab = app.buttons["tab.schedule"]
         XCTAssertTrue(scheduleTab.waitForExistence(timeout: 15), "Schedule tab should appear on launch")
-        XCTAssertTrue(app.tabBars.buttons["New"].exists)
-        XCTAssertTrue(app.tabBars.buttons["Popular"].exists)
-        XCTAssertTrue(app.tabBars.buttons["Bookmarks"].exists)
-        sleep(3)
+        XCTAssertTrue(app.buttons["tab.new"].exists)
+        XCTAssertTrue(app.buttons["tab.popular"].exists)
+        XCTAssertTrue(app.buttons["tab.bookmarks"].exists)
+        sleep(5)
         attachScreenshot(named: "01-ios-home-schedule")
 
         // 2. New Releases tab
-        app.tabBars.buttons["New"].tap()
+        app.buttons["tab.new"].tap()
         sleep(3)
         attachScreenshot(named: "02-ios-new")
 
         // 3. Popular tab
-        app.tabBars.buttons["Popular"].tap()
+        app.buttons["tab.popular"].tap()
         sleep(3)
         attachScreenshot(named: "03-ios-popular")
 
         // 4. Bookmarks tab
-        app.tabBars.buttons["Bookmarks"].tap()
+        app.buttons["tab.bookmarks"].tap()
         sleep(2)
         attachScreenshot(named: "04-ios-bookmarks")
 
@@ -53,7 +53,7 @@ final class AnimeHeavenUITests: XCTestCase {
         app.navigationBars.buttons.element(boundBy: 0).tap()
         XCTAssertTrue(scheduleTab.waitForExistence(timeout: 10))
 
-        // 6. Settings (Default OLED Dark)
+        // 6. Settings (Default Cinema Dark)
         let settingsBtn = app.buttons["topbar.settings"]
         XCTAssertTrue(settingsBtn.waitForExistence(timeout: 10), "Settings button should be visible")
         settingsBtn.tap()
@@ -62,11 +62,10 @@ final class AnimeHeavenUITests: XCTestCase {
         attachScreenshot(named: "06-ios-settings-dark")
 
         // 7. Switch Theme to Midnight Indigo
-        let indigoTheme = app.buttons["Midnight Indigo"]
-        if indigoTheme.waitForExistence(timeout: 5) {
-            indigoTheme.tap()
-            sleep(1)
-        }
+        let indigoTheme = app.buttons["theme.dark2"]
+        XCTAssertTrue(indigoTheme.waitForExistence(timeout: 5), "Midnight Indigo theme button should exist")
+        indigoTheme.tap()
+        sleep(1)
         attachScreenshot(named: "07-ios-settings-indigo")
 
         // 8. Return to Home in Midnight Indigo
