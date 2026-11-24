@@ -23,7 +23,7 @@ final class AnimeHeavenUITests: XCTestCase {
         XCTAssertEqual(header.label, "For You")
         XCTAssertGreaterThan(header.frame.width, 48, "The Home title must not collapse into an icon-only tile.")
         XCTAssertTrue(app.staticTexts["Popular Today"].waitForExistence(timeout: 15), "Home Popular Today section should load")
-        sleep(2)
+        sleep(3)
         attachScreenshot(named: "01-ios-home-schedule")
 
         // 2. New Releases tab

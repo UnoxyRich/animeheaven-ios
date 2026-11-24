@@ -183,8 +183,9 @@ struct AnimeDetailView: View {
             }
 
             HStack(spacing: 10) {
-                if !detail.score.isEmpty {
-                    Text("Score \(detail.score)")
+                let normalizedScore = detail.score.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !normalizedScore.isEmpty && normalizedScore != "?" && normalizedScore.caseInsensitiveCompare("N/A") != .orderedSame {
+                    Text("Score \(normalizedScore)")
                         .font(.caption.weight(.bold))
                         .foregroundStyle(palette.positiveGreen)
                         .lineLimit(1)
