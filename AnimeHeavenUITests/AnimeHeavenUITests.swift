@@ -23,23 +23,19 @@ final class AnimeHeavenUITests: XCTestCase {
         XCTAssertEqual(header.label, "For You")
         XCTAssertGreaterThan(header.frame.width, 48, "The Home title must not collapse into an icon-only tile.")
         XCTAssertTrue(app.staticTexts["Popular Today"].waitForExistence(timeout: 15), "Home Popular Today section should load")
-        let artwork = app.descendants(matching: .any)["walkthrough.home.artwork"].firstMatch
-        XCTAssertTrue(artwork.waitForExistence(timeout: 10))
-        let artworkReady = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "ready"), object: artwork)
-        XCTAssertEqual(XCTWaiter.wait(for: [artworkReady], timeout: 25), .completed, "Hero and both visible Top 10 posters should finish decoding")
-        sleep(1) // Allow the decoded artwork's crossfade to settle.
+        waitForArtwork(in: app, screen: "home")
         attachScreenshot(named: "01-ios-home-schedule")
 
         // 2. New Releases tab
         app.buttons["tab.new"].tap()
-        _ = app.staticTexts["Latest Releases"].waitForExistence(timeout: 15)
-        sleep(2)
+        XCTAssertTrue(app.staticTexts["Latest Releases"].waitForExistence(timeout: 15))
+        waitForArtwork(in: app, screen: "new")
         attachScreenshot(named: "02-ios-new")
 
         // 3. Popular tab
         app.buttons["tab.popular"].tap()
-        _ = app.staticTexts["Ranked by Views"].waitForExistence(timeout: 15)
-        sleep(2)
+        XCTAssertTrue(app.staticTexts["Ranked by Views"].waitForExistence(timeout: 15))
+        waitForArtwork(in: app, screen: "popular")
         attachScreenshot(named: "03-ios-popular")
 
         // 4. Bookmarks tab
@@ -94,7 +90,7 @@ final class AnimeHeavenUITests: XCTestCase {
         // 8. Return to Home in Midnight Indigo
         app.navigationBars.buttons.element(boundBy: 0).tap()
         XCTAssertTrue(scheduleTab.waitForExistence(timeout: 10))
-        sleep(2)
+        waitForArtwork(in: app, screen: "home")
         attachScreenshot(named: "08-ios-home-indigo")
 
         // 9. Switch Theme to Classic Light and verify Settings contrast
@@ -120,6 +116,15 @@ final class AnimeHeavenUITests: XCTestCase {
         _ = myListButton.waitForExistence(timeout: 15)
         sleep(2)
         attachScreenshot(named: "10-ios-detail")
+    }
+
+    @MainActor
+    private func waitForArtwork(in app: XCUIApplication, screen: String) {
+        let artwork = app.descendants(matching: .any)["walkthrough.\(screen).artwork"].firstMatch
+        XCTAssertTrue(artwork.waitForExistence(timeout: 10))
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "ready"), object: artwork)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 25), .completed, "\(screen) artwork should finish decoding")
+        sleep(1) // Allow the crossfade to settle before capturing.
     }
 
     @MainActor

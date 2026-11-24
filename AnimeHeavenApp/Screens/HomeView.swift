@@ -118,15 +118,11 @@ struct HomeView: View {
             }
         }
         .overlay(alignment: .topLeading) {
-            if let store = artworkStore, store.tracksWalkthroughImages, let feed = viewModel.feed,
+            if artworkStore?.tracksWalkthroughImages == true, let feed = viewModel.feed,
                let banner = feed.banners.first {
                 let required = [ArtworkStore.walkthroughImageKey(banner.animeId, slot: .landscape16x9)]
                     + feed.popularItems.prefix(2).map { ArtworkStore.walkthroughImageKey($0.id, slot: .portrait2x3) }
-                Color.clear.frame(width: 1, height: 1)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("Home artwork")
-                    .accessibilityValue(store.walkthroughImages.isSuperset(of: required) ? "ready" : "loading")
-                    .accessibilityIdentifier("walkthrough.home.artwork")
+                ArtworkWalkthroughStatus(name: "home", required: required)
             }
         }
         .navigationTitle("")

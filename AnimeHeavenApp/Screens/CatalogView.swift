@@ -14,6 +14,7 @@ struct CatalogView: View {
     let onOpenSettings: () -> Void
 
     @Environment(\.ahPalette) private var palette
+    @Environment(\.artworkStore) private var artworkStore
     private let gridColumns = [GridItem(.adaptive(minimum: 112, maximum: 165), spacing: 12)]
 
     init(
@@ -116,6 +117,13 @@ struct CatalogView: View {
                 .refreshable {
                     await viewModel.refreshAsync()
                 }
+            }
+        }
+        .overlay(alignment: .topLeading) {
+            if artworkStore?.tracksWalkthroughImages == true, isRootTab, !viewModel.items.isEmpty {
+                let slot: ArtworkSlot = viewModel.viewMode == .list ? .landscape16x9 : .portrait2x3
+                let required = viewModel.items.prefix(6).map { ArtworkStore.walkthroughImageKey($0.id, slot: slot) }
+                ArtworkWalkthroughStatus(name: viewModel.kind.isPopularRank ? "popular" : "new", required: required)
             }
         }
         .navigationBarTitleDisplayMode(.inline)
