@@ -34,16 +34,25 @@ struct SearchViewModelTests {
         #expect(vm.recentSearches == ["frieren"])
 
         vm.onQueryChanged("bleach")
-        try await Task.sleep(for: .milliseconds(80))
+        await vm.waitForCurrentSearch()
         #expect(!vm.isFullSearchMode)
-        #expect(vm.fastResults.count == 1)
-        #expect(vm.fastResults[0].title == "Match: bleach")
+        #expect(vm.fastResults.map(\.title) == ["Match: bleach"])
 
         vm.submitFullSearch()
-        try await Task.sleep(for: .milliseconds(80))
+        await vm.waitForCurrentSearch()
         #expect(vm.isFullSearchMode)
-        #expect(vm.fullResults.count == 1)
-        #expect(vm.fullResults[0].title == "Full: bleach")
+        #expect(vm.fullResults.map(\.title) == ["Full: bleach"])
         #expect(vm.recentSearches.first == "bleach")
+    }
+
+    @Test @MainActor func fullSearchCancelsPendingSuggestions() async {
+        let vm = SearchViewModel(gateway: FakeSearchGateway(), debounceMs: 500)
+        vm.onQueryChanged("bleach")
+        vm.submitFullSearch("frieren")
+        await vm.waitForCurrentSearch()
+        #expect(vm.query == "frieren")
+        #expect(vm.isFullSearchMode)
+        #expect(vm.fastResults.isEmpty)
+        #expect(vm.fullResults.map(\.title) == ["Full: frieren"])
     }
 }

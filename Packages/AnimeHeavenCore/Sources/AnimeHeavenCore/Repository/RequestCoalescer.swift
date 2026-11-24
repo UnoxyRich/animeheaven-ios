@@ -46,4 +46,8 @@ public actor RequestCoalescer<Value: Sendable> {
             for waiter in flight.waiters.values { waiter.resume(with: result) }
         }
     }
+
+    func waiterCount(for key: String) -> Int {
+        inFlight[key]?.waiters.count ?? 0
+    }
 }

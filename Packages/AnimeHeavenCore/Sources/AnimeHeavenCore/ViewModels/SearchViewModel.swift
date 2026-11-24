@@ -67,6 +67,11 @@ public final class SearchViewModel {
         recentSearches = await gateway.getRecentSearches()
     }
 
+    /// Wait for the currently requested search, including its debounced work.
+    func waitForCurrentSearch() async {
+        await activeTask?.value
+    }
+
     public func onQueryChanged(_ newValue: String) {
         query = newValue
         isFullSearchMode = false
@@ -123,7 +128,9 @@ public final class SearchViewModel {
                 self.fullResultsTitle = res.title.isEmpty ? "Results for \"\(target)\"" : res.title
                 self.fullResults = res.items
                 self.isLoading = false
-                self.recentSearches = await self.gateway.getRecentSearches()
+                let recent = await self.gateway.getRecentSearches()
+                guard !Task.isCancelled else { return }
+                self.recentSearches = recent
                 await self.preloader?.preloadImages(
                     urls: res.items.map(\.coverUrl),
                     maxCount: 12,
