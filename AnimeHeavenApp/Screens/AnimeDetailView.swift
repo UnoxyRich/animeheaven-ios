@@ -10,7 +10,7 @@ struct AnimeDetailView: View {
 
     @Environment(\.ahPalette) private var palette
     @State private var expandSynopsis = false
-    private let episodeColumns = [GridItem(.adaptive(minimum: 74, maximum: 110), spacing: 10)]
+    private let episodeColumns = [GridItem(.adaptive(minimum: 78, maximum: 114), spacing: 10)]
 
     init(
         animeId: String,
@@ -56,8 +56,8 @@ struct AnimeDetailView: View {
                                         expandSynopsis.toggle()
                                     }
                                 }
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(palette.crimson)
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(palette.textPrimary)
                             }
                             .padding(.horizontal, 16)
                         }
@@ -71,11 +71,11 @@ struct AnimeDetailView: View {
                                         } label: {
                                             Text(tag)
                                                 .font(.caption.weight(.semibold))
-                                                .foregroundStyle(palette.textPrimary)
+                                                .foregroundStyle(palette.textSecondary)
                                                 .padding(.horizontal, 12)
                                                 .padding(.vertical, 6)
                                                 .background(palette.surfaceElevated, in: Capsule())
-                                                .overlay(Capsule().stroke(palette.borderSubtle, lineWidth: 1))
+                                                .overlay(Capsule().stroke(Color.white.opacity(0.16), lineWidth: 1))
                                         }
                                         .buttonStyle(.plain)
                                     }
@@ -86,8 +86,8 @@ struct AnimeDetailView: View {
 
                         if let countdown = detail.countdownLabel {
                             Label(countdown, systemImage: "clock.fill")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(palette.crimson)
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(palette.positiveGreen)
                                 .padding(.horizontal, 16)
                         }
 
@@ -97,7 +97,7 @@ struct AnimeDetailView: View {
                             showStrip(title: "Related Shows", shows: detail.relatedShows)
                         }
                         if !detail.similarShows.isEmpty {
-                            showStrip(title: "Similar Shows", shows: detail.similarShows)
+                            showStrip(title: "More Like This", shows: detail.similarShows)
                         }
                     }
                     .padding(.bottom, 28)
@@ -122,99 +122,132 @@ struct AnimeDetailView: View {
 
     @ViewBuilder
     private func headerSection(detail: AnimeDetail) -> some View {
+        // Full-bleed Netflix hero backdrop
         ZStack(alignment: .bottomLeading) {
-            if let banner = detail.bannerUrl {
-                AhCoverImage(url: banner, targetSize: .heroBanner, imageCache: imageCache)
-                    .frame(height: 180)
-                    .overlay(
-                        LinearGradient(
-                            colors: [Color.black.opacity(0.25), palette.background],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-            } else {
-                Rectangle()
-                    .fill(palette.surfaceElevated)
-                    .frame(height: 110)
-            }
-
-            HStack(alignment: .bottom, spacing: 14) {
-                AhCoverImage(url: detail.posterUrl, targetSize: .detailPoster, imageCache: imageCache)
-                    .frame(width: 108, height: 156)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(palette.borderSubtle, lineWidth: 1))
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(detail.title)
-                        .font(.headline.weight(.bold))
-                        .foregroundStyle(palette.textPrimary)
-                        .lineLimit(3)
-
-                    if !detail.japaneseTitle.isEmpty {
-                        Text(detail.japaneseTitle)
-                            .font(.caption)
-                            .foregroundStyle(palette.textMuted)
-                            .lineLimit(2)
-                    }
-
-                    HStack(spacing: 12) {
-                        metaBadge(label: "EP", value: detail.episodesLabel)
-                        metaBadge(label: "YEAR", value: detail.year)
-                        metaBadge(label: "SCORE", value: detail.score)
-                    }
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 48)
+            AhCoverImage(
+                url: detail.bannerUrl ?? detail.posterUrl,
+                targetSize: .heroBanner,
+                imageCache: imageCache
+            )
+            .frame(height: 220)
+            .frame(maxWidth: .infinity)
+            .clipped()
+            .overlay(
+                LinearGradient(
+                    stops: [
+                        .init(color: Color.black.opacity(0.25), location: 0.0),
+                        .init(color: Color.black.opacity(0.5), location: 0.55),
+                        .init(color: palette.background, location: 1.0)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
         }
 
-        HStack(spacing: 10) {
-            if let target = viewModel.primaryAction {
-                Button {
-                    onPlayEpisode(target.episodeKey, detail.id, detail.title, detail.posterUrl)
-                } label: {
-                    Label(target.buttonLabel, systemImage: "play.fill")
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(palette.crimson, in: RoundedRectangle(cornerRadius: 12))
-                }
+        // Netflix editorial title & metadata block
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Text("A")
+                    .font(.system(size: 15, weight: .black))
+                    .foregroundStyle(palette.crimson)
+                Text("S E R I E S")
+                    .font(.system(size: 10, weight: .bold))
+                    .tracking(2.2)
+                    .foregroundStyle(palette.textSecondary)
             }
 
-            Button {
-                viewModel.toggleBookmark()
-            } label: {
-                Image(systemName: viewModel.isBookmarked ? "bookmark.fill" : "bookmark")
-                    .font(.headline)
-                    .foregroundStyle(viewModel.isBookmarked ? palette.crimson : palette.textPrimary)
-                    .padding(12)
-                    .background(palette.surfaceElevated, in: RoundedRectangle(cornerRadius: 12))
-                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(palette.borderSubtle, lineWidth: 1))
+            Text(detail.title)
+                .font(.title2.weight(.heavy))
+                .foregroundStyle(palette.textPrimary)
+                .lineLimit(3)
+
+            if !detail.japaneseTitle.isEmpty {
+                Text(detail.japaneseTitle)
+                    .font(.caption)
+                    .foregroundStyle(palette.textMuted)
+                    .lineLimit(2)
             }
+
+            HStack(spacing: 10) {
+                if !detail.score.isEmpty {
+                    Text("Score \(detail.score)")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(palette.positiveGreen)
+                }
+                if !detail.year.isEmpty {
+                    Text(detail.year)
+                        .font(.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+                if !detail.episodesLabel.isEmpty {
+                    Text("\(detail.episodesLabel) Episodes")
+                        .font(.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+                Text("HD")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(palette.textPrimary)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .overlay(RoundedRectangle(cornerRadius: 3).stroke(palette.textSecondary.opacity(0.6), lineWidth: 1))
+            }
+
+            // Stacked Full-Width Netflix Mobile CTAs: White Play + Dark Matte My List
+            VStack(spacing: 9) {
+                if let target = viewModel.primaryAction {
+                    Button {
+                        onPlayEpisode(target.episodeKey, detail.id, detail.title, detail.posterUrl)
+                    } label: {
+                        Label(target.buttonLabel, systemImage: "play.fill")
+                            .font(.subheadline.weight(.heavy))
+                            .foregroundStyle(.black)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(Color.white, in: RoundedRectangle(cornerRadius: 6))
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Button {
+                    viewModel.toggleBookmark()
+                } label: {
+                    Label(
+                        viewModel.isBookmarked ? "In My List" : "Add to My List",
+                        systemImage: viewModel.isBookmarked ? "checkmark" : "plus"
+                    )
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 11)
+                    .background(
+                        viewModel.isBookmarked ? palette.crimson : palette.surfaceElevated,
+                        in: RoundedRectangle(cornerRadius: 6)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(viewModel.isBookmarked ? palette.crimson : Color.white.opacity(0.16), lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.top, 4)
         }
         .padding(.horizontal, 16)
-    }
-
-    private func metaBadge(label: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(label)
-                .font(.system(size: 9, weight: .bold))
-                .foregroundStyle(palette.textMuted)
-            Text(value)
-                .font(.caption.weight(.bold))
-                .foregroundStyle(palette.textPrimary)
-        }
     }
 
     @ViewBuilder
     private func episodesSection(detail: AnimeDetail) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Episodes (\(detail.episodes.count))")
-                    .font(.title3.weight(.bold))
-                    .foregroundStyle(palette.textPrimary)
+            HStack(alignment: .bottom) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Capsule()
+                        .fill(palette.crimson)
+                        .frame(width: 44, height: 3)
+                    Text("Episodes (\(detail.episodes.count))")
+                        .font(.title3.weight(.heavy))
+                        .foregroundStyle(palette.textPrimary)
+                }
                 Spacer()
                 Button {
                     viewModel.toggleSortOrder()
@@ -228,6 +261,7 @@ struct AnimeDetailView: View {
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .background(palette.surfaceElevated, in: Capsule())
+                    .overlay(Capsule().stroke(Color.white.opacity(0.16), lineWidth: 1))
                 }
             }
             .padding(.horizontal, 16)
@@ -245,9 +279,12 @@ struct AnimeDetailView: View {
                         onPlayEpisode(ep.key, detail.id, detail.title, detail.posterUrl)
                     } label: {
                         VStack(spacing: 4) {
-                            Text("Ep \(ep.numberLabel)")
-                                .font(.subheadline.weight(.bold))
-                                .foregroundStyle(isWatched ? palette.textMuted : palette.textPrimary)
+                            Text(isWatched ? "WATCHED" : "EP")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(isWatched ? palette.positiveGreen : palette.textMuted)
+                            Text(ep.numberLabel)
+                                .font(.headline.weight(.heavy))
+                                .foregroundStyle(palette.textPrimary)
                                 .lineLimit(1)
                             if !ep.releaseAge.isEmpty {
                                 Text(ep.releaseAge)
@@ -258,7 +295,7 @@ struct AnimeDetailView: View {
                             if frac > 0.02 {
                                 GeometryReader { geo in
                                     ZStack(alignment: .leading) {
-                                        Capsule().fill(palette.borderSubtle)
+                                        Capsule().fill(Color.white.opacity(0.2))
                                         Capsule()
                                             .fill(isWatched ? palette.positiveGreen : palette.crimson)
                                             .frame(width: geo.size.width * frac)
@@ -270,10 +307,10 @@ struct AnimeDetailView: View {
                         .padding(.horizontal, 8)
                         .padding(.vertical, 10)
                         .frame(maxWidth: .infinity)
-                        .background(palette.surface, in: RoundedRectangle(cornerRadius: 10))
+                        .background(isWatched ? palette.surface : palette.surfaceElevated, in: RoundedRectangle(cornerRadius: 8))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 10)
-                                .stroke(isWatched ? palette.positiveGreen.opacity(0.45) : palette.borderSubtle, lineWidth: 1)
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(isWatched ? palette.positiveGreen.opacity(0.45) : Color.white.opacity(0.14), lineWidth: 1)
                         )
                     }
                     .buttonStyle(.plain)
@@ -287,12 +324,12 @@ struct AnimeDetailView: View {
     private func showStrip(title: String, shows: [AnimeCard]) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title)
-                .font(.title3.weight(.bold))
+                .font(.title3.weight(.heavy))
                 .foregroundStyle(palette.textPrimary)
                 .padding(.horizontal, 16)
 
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 12) {
+                LazyHStack(spacing: 10) {
                     ForEach(shows) { show in
                         Button {
                             onOpenAnime(show.id)
@@ -303,8 +340,12 @@ struct AnimeDetailView: View {
                                     targetSize: .popularCard,
                                     imageCache: imageCache
                                 )
-                                .frame(width: 112, height: 152)
-                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                                .frame(width: 112, height: 158)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                                )
 
                                 Text(show.title)
                                     .font(.caption.weight(.semibold))

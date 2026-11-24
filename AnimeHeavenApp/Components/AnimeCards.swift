@@ -1,6 +1,7 @@
 import SwiftUI
 import AnimeHeavenCore
 
+/// 2025/2026 Netflix Mobile Top Bar Brand: Condensed bold red "A" monogram + "For You".
 struct AhBrandToolbarTitle: View {
     @Environment(\.ahPalette) private var palette
     let seasonLabel: String?
@@ -8,30 +9,23 @@ struct AhBrandToolbarTitle: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            HStack(spacing: 0) {
-                Text("A")
-                    .foregroundStyle(.white)
-                Text("H")
-                    .foregroundStyle(palette.crimson)
-            }
-            .font(.system(size: 16, weight: .heavy))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(Color.black, in: RoundedRectangle(cornerRadius: 8))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(palette.crimson, lineWidth: 1.5)
-            )
+            Text("A")
+                .font(.system(size: 26, weight: .black))
+                .foregroundStyle(palette.crimson)
+
+            Text("For You")
+                .font(.system(size: 19, weight: .heavy))
+                .foregroundStyle(palette.textPrimary)
 
             if let seasonLabel, !seasonLabel.isEmpty {
                 Button(action: onTapSeason) {
                     Text(seasonLabel)
-                        .font(.caption.weight(.semibold))
+                        .font(.caption2.weight(.bold))
                         .foregroundStyle(palette.textPrimary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(palette.surfaceElevated, in: Capsule())
-                        .overlay(Capsule().stroke(palette.borderSubtle, lineWidth: 1))
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 4)
+                        .background(Color.white.opacity(palette.isLight ? 0.0 : 0.14), in: Capsule())
+                        .overlay(Capsule().stroke(palette.isLight ? palette.borderSubtle : Color.white.opacity(0.28), lineWidth: 1))
                 }
                 .buttonStyle(.plain)
             }
@@ -46,9 +40,10 @@ struct AhTopActionButtons: View {
     let onSettings: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 14) {
             Button(action: onSearch) {
                 Image(systemName: "magnifyingglass")
+                    .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
             }
             .accessibilityLabel("Search")
@@ -56,6 +51,7 @@ struct AhTopActionButtons: View {
 
             Button(action: onRandom) {
                 Image(systemName: "shuffle")
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
             }
             .accessibilityLabel("Random Anime")
@@ -63,6 +59,7 @@ struct AhTopActionButtons: View {
 
             Button(action: onSettings) {
                 Image(systemName: "gearshape.fill")
+                    .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
             }
             .accessibilityLabel("Settings")
@@ -71,6 +68,55 @@ struct AhTopActionButtons: View {
     }
 }
 
+/// Netflix Mobile horizontal frosted category filter pills strip.
+struct NetflixCategoryPillStrip: View {
+    let seasonLabel: String?
+    let onSeasonal: () -> Void
+    let onPopular: () -> Void
+    let onRandom: () -> Void
+
+    @Environment(\.ahPalette) private var palette
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                if let seasonLabel, !seasonLabel.isEmpty {
+                    pillButton(title: seasonLabel, systemImage: nil, action: onSeasonal)
+                }
+                pillButton(title: "Top 10", systemImage: "flame.fill", action: onPopular)
+                pillButton(title: "Surprise Me", systemImage: "shuffle", action: onRandom)
+            }
+            .padding(.horizontal, 16)
+        }
+    }
+
+    private func pillButton(title: String, systemImage: String?, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                if let systemImage {
+                    Image(systemName: systemImage)
+                        .font(.caption2.weight(.bold))
+                }
+                Text(title)
+                    .font(.caption.weight(.semibold))
+            }
+            .foregroundStyle(palette.textPrimary)
+            .padding(.horizontal, 13)
+            .padding(.vertical, 7)
+            .background(
+                palette.isLight ? palette.surfaceElevated : Color.white.opacity(0.12),
+                in: Capsule()
+            )
+            .overlay(
+                Capsule()
+                    .stroke(palette.isLight ? palette.borderSubtle : Color.white.opacity(0.26), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// Iconic Netflix Mobile Tall Framed Hero Billboard Card with White Play + Frosted Dark Details buttons.
 struct HeroBannerPager: View {
     let banners: [BannerItem]
     let imageCache: ImageCacheManager
@@ -84,44 +130,117 @@ struct HeroBannerPager: View {
         if !banners.isEmpty {
             TabView(selection: $currentIndex) {
                 ForEach(Array(banners.enumerated()), id: \.element.id) { idx, banner in
-                    Button {
-                        onSelect(banner.animeId)
-                    } label: {
-                        ZStack(alignment: .bottomLeading) {
-                            AhCoverImage(
-                                url: banner.bannerImageUrl,
-                                targetSize: .heroBanner,
-                                imageCache: imageCache
-                            )
-                            LinearGradient(
-                                colors: [.clear, Color.black.opacity(0.85)],
-                                startPoint: .center,
-                                endPoint: .bottom
-                            )
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("FEATURED")
-                                    .font(.caption2.weight(.heavy))
+                    ZStack(alignment: .bottom) {
+                        AhCoverImage(
+                            url: banner.bannerImageUrl,
+                            targetSize: .heroBanner,
+                            imageCache: imageCache
+                        )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .clipped()
+
+                        LinearGradient(
+                            stops: [
+                                .init(color: .clear, location: 0.0),
+                                .init(color: Color.black.opacity(0.18), location: 0.40),
+                                .init(color: Color(hex: 0x0B0B0B).opacity(0.84), location: 0.72),
+                                .init(color: Color(hex: 0x0B0B0B).opacity(0.97), location: 1.0)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+
+                        // Top-left featured badge
+                        VStack {
+                            HStack {
+                                Text("#\(idx + 1) FEATURED")
+                                    .font(.system(size: 10, weight: .black))
+                                    .tracking(0.6)
                                     .foregroundStyle(.white)
                                     .padding(.horizontal, 8)
-                                    .padding(.vertical, 3)
-                                    .background(palette.crimson, in: Capsule())
-                                Text(banner.title)
-                                    .font(.headline.weight(.bold))
-                                    .foregroundStyle(.white)
-                                    .lineLimit(2)
-                                    .multilineTextAlignment(.leading)
+                                    .padding(.vertical, 4)
+                                    .background(palette.crimson, in: RoundedRectangle(cornerRadius: 4))
+                                Spacer()
                             }
                             .padding(14)
+                            Spacer()
                         }
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
+
+                        // Centered Netflix editorial metadata & side-by-side CTAs
+                        VStack(spacing: 8) {
+                            HStack(spacing: 6) {
+                                Text("A")
+                                    .font(.system(size: 15, weight: .black))
+                                    .foregroundStyle(palette.crimson)
+                                Text("S E R I E S")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .tracking(2.2)
+                                    .foregroundStyle(Color.white.opacity(0.85))
+                            }
+
+                            Text(banner.title)
+                                .font(.title2.weight(.heavy))
+                                .foregroundStyle(.white)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.center)
+
+                            Text("Trending Now  •  Subbed Anime  •  HD")
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(Color.white.opacity(0.82))
+
+                            HStack(spacing: 10) {
+                                Button {
+                                    onSelect(banner.animeId)
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "play.fill")
+                                            .font(.subheadline)
+                                        Text("Play")
+                                            .font(.subheadline.weight(.heavy))
+                                    }
+                                    .foregroundStyle(.black)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 11)
+                                    .background(Color.white, in: RoundedRectangle(cornerRadius: 6))
+                                }
+                                .buttonStyle(.plain)
+
+                                Button {
+                                    onSelect(banner.animeId)
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "info.circle")
+                                            .font(.subheadline.weight(.semibold))
+                                        Text("Details")
+                                            .font(.subheadline.weight(.bold))
+                                    }
+                                    .foregroundStyle(.white)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 11)
+                                    .background(Color(hex: 0x303030).opacity(0.82), in: RoundedRectangle(cornerRadius: 6))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 6)
+                                            .stroke(Color.white.opacity(0.22), lineWidth: 1)
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .padding(.top, 4)
+                        }
                         .padding(.horizontal, 16)
+                        .padding(.bottom, 18)
                     }
-                    .buttonStyle(.plain)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(Color.white.opacity(0.22), lineWidth: 1)
+                    )
+                    .padding(.horizontal, 16)
                     .tag(idx)
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .automatic))
-            .frame(height: 195)
+            .frame(height: 368)
             .task(id: scenePhase) {
                 guard scenePhase == .active, banners.count > 1 else { return }
                 while !Task.isCancelled {
@@ -147,7 +266,7 @@ struct ContinueWatchingRow: View {
         if !items.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Continue Watching")
-                    .font(.title3.weight(.bold))
+                    .font(.title3.weight(.heavy))
                     .foregroundStyle(palette.textPrimary)
                     .padding(.horizontal, 16)
 
@@ -157,57 +276,86 @@ struct ContinueWatchingRow: View {
                             Button {
                                 onPlay(item)
                             } label: {
-                                VStack(alignment: .leading, spacing: 6) {
-                                    ZStack(alignment: .bottomLeading) {
+                                VStack(alignment: .leading, spacing: 0) {
+                                    ZStack {
                                         AhCoverImage(
                                             url: item.coverUrl,
                                             targetSize: .continueCard,
                                             imageCache: imageCache
                                         )
-                                        .frame(width: 210, height: 118)
-                                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                                        .frame(width: 204, height: 115)
+                                        .clipped()
 
                                         LinearGradient(
                                             colors: [.clear, Color.black.opacity(0.75)],
                                             startPoint: .center,
                                             endPoint: .bottom
                                         )
-                                        .clipShape(RoundedRectangle(cornerRadius: 10))
 
-                                        HStack {
+                                        // Netflix centered frosted play circle
+                                        ZStack {
+                                            Circle()
+                                                .fill(Color.black.opacity(0.62))
+                                                .frame(width: 40, height: 40)
+                                            Circle()
+                                                .stroke(Color.white, lineWidth: 1.5)
+                                                .frame(width: 40, height: 40)
                                             Image(systemName: "play.fill")
-                                                .font(.caption2)
-                                            Text(item.isNextEpisode ? "Up Next • \(item.targetEpisodeLabel)" : "Ep \(item.targetEpisodeLabel)")
-                                                .font(.caption2.weight(.bold))
+                                                .font(.subheadline)
+                                                .foregroundStyle(.white)
+                                                .offset(x: 1)
                                         }
-                                        .foregroundStyle(.white)
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 4)
-                                        .background(palette.crimson, in: Capsule())
-                                        .padding(8)
 
-                                        if !item.isNextEpisode && item.progressFraction > 0 {
-                                            GeometryReader { geo in
-                                                ZStack(alignment: .leading) {
-                                                    Rectangle().fill(Color.white.opacity(0.25))
-                                                    Rectangle()
-                                                        .fill(palette.crimson)
-                                                        .frame(width: geo.size.width * item.progressFraction)
-                                                }
+                                        VStack {
+                                            HStack {
+                                                Text(item.isNextEpisode ? "UP NEXT • \(item.targetEpisodeLabel)" : "EP \(item.targetEpisodeLabel)")
+                                                    .font(.system(size: 10, weight: .heavy))
+                                                    .foregroundStyle(.white)
+                                                    .padding(.horizontal, 7)
+                                                    .padding(.vertical, 3)
+                                                    .background(
+                                                        item.isNextEpisode ? palette.crimson : Color.black.opacity(0.72),
+                                                        in: RoundedRectangle(cornerRadius: 4)
+                                                    )
+                                                Spacer()
                                             }
-                                            .frame(height: 3)
-                                            .clipShape(Capsule())
-                                            .padding(.horizontal, 6)
-                                            .padding(.bottom, 2)
+                                            .padding(7)
+                                            Spacer()
+                                            if !item.isNextEpisode && item.progressFraction > 0 {
+                                                GeometryReader { geo in
+                                                    ZStack(alignment: .leading) {
+                                                        Rectangle().fill(Color.white.opacity(0.3))
+                                                        Rectangle()
+                                                            .fill(palette.crimson)
+                                                            .frame(width: geo.size.width * item.progressFraction)
+                                                    }
+                                                }
+                                                .frame(height: 3.5)
+                                            }
                                         }
                                     }
+                                    .frame(width: 204, height: 115)
 
-                                    Text(item.animeTitle)
-                                        .font(.subheadline.weight(.semibold))
-                                        .foregroundStyle(palette.textPrimary)
-                                        .lineLimit(1)
-                                        .frame(width: 210, alignment: .leading)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(item.animeTitle)
+                                            .font(.caption.weight(.bold))
+                                            .foregroundStyle(palette.textPrimary)
+                                            .lineLimit(1)
+                                        Text(item.isNextEpisode ? "Ready to play" : "Resume Episode \(item.targetEpisodeLabel)")
+                                            .font(.caption2)
+                                            .foregroundStyle(palette.textMuted)
+                                            .lineLimit(1)
+                                    }
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 8)
+                                    .frame(width: 204, alignment: .leading)
+                                    .background(palette.surface)
                                 }
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                                )
                             }
                             .buttonStyle(.plain)
                         }
@@ -219,6 +367,7 @@ struct ContinueWatchingRow: View {
     }
 }
 
+/// Iconic Netflix "Top 10 Popular Today" horizontal swimlane with giant rank numerals & red TOP 10 badge.
 struct PopularHorizontalStrip: View {
     let items: [AnimeCard]
     let imageCache: ImageCacheManager
@@ -230,47 +379,97 @@ struct PopularHorizontalStrip: View {
     var body: some View {
         if !items.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Text("Popular")
-                        .font(.title3.weight(.bold))
+                HStack(spacing: 8) {
+                    Text("TOP 10")
+                        .font(.system(size: 10, weight: .black))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(palette.crimson, in: RoundedRectangle(cornerRadius: 4))
+
+                    Text("Popular Today")
+                        .font(.title3.weight(.heavy))
                         .foregroundStyle(palette.textPrimary)
+
                     Spacer()
+
                     Button(action: onSeeAll) {
                         HStack(spacing: 2) {
                             Text("See All")
                             Image(systemName: "chevron.right")
                         }
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(palette.crimson)
+                        .foregroundStyle(palette.textSecondary)
                     }
                 }
                 .padding(.horizontal, 16)
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: 12) {
-                        ForEach(items) { card in
+                        ForEach(Array(items.enumerated()), id: \.element.id) { idx, card in
+                            let rank = idx + 1
                             Button {
                                 onSelect(card.id)
                             } label: {
-                                VStack(alignment: .leading, spacing: 6) {
-                                    AhCoverImage(
-                                        url: card.coverUrl,
-                                        targetSize: .popularCard,
-                                        imageCache: imageCache
-                                    )
-                                    .frame(width: 118, height: 158)
-                                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 10)
-                                            .stroke(palette.borderSubtle, lineWidth: 1)
-                                    )
+                                HStack(alignment: .bottom, spacing: 0) {
+                                    if rank <= 10 {
+                                        Text("\(rank)")
+                                            .font(.system(size: rank == 10 ? 58 : 72, weight: .black))
+                                            .tracking(-3)
+                                            .foregroundStyle(
+                                                palette.isLight ? Color.black.opacity(0.22) : Color.white.opacity(0.32)
+                                            )
+                                            .offset(x: 10, y: 10)
+                                    }
 
-                                    Text(card.title)
-                                        .font(.caption.weight(.semibold))
-                                        .foregroundStyle(palette.textPrimary)
-                                        .lineLimit(2)
-                                        .multilineTextAlignment(.leading)
-                                        .frame(width: 118, alignment: .leading)
+                                    ZStack(alignment: .bottomLeading) {
+                                        AhCoverImage(
+                                            url: card.coverUrl,
+                                            targetSize: .popularCard,
+                                            imageCache: imageCache
+                                        )
+                                        .frame(width: 114, height: 164)
+                                        .clipped()
+
+                                        LinearGradient(
+                                            colors: [.clear, Color.black.opacity(0.88)],
+                                            startPoint: .center,
+                                            endPoint: .bottom
+                                        )
+
+                                        if rank <= 10 {
+                                            VStack {
+                                                HStack {
+                                                    Spacer()
+                                                    VStack(spacing: -1) {
+                                                        Text("TOP")
+                                                            .font(.system(size: 7, weight: .black))
+                                                        Text("10")
+                                                            .font(.system(size: 10, weight: .black))
+                                                    }
+                                                    .foregroundStyle(.white)
+                                                    .padding(.horizontal, 4)
+                                                    .padding(.vertical, 3)
+                                                    .background(palette.crimson)
+                                                }
+                                                Spacer()
+                                            }
+                                        }
+
+                                        Text(card.title)
+                                            .font(.caption2.weight(.bold))
+                                            .foregroundStyle(.white)
+                                            .lineLimit(2)
+                                            .multilineTextAlignment(.leading)
+                                            .padding(.horizontal, 7)
+                                            .padding(.bottom, 7)
+                                    }
+                                    .frame(width: 114, height: 164)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .stroke(Color.white.opacity(0.14), lineWidth: 1)
+                                    )
                                 }
                             }
                             .buttonStyle(.plain)
@@ -294,15 +493,27 @@ struct ScheduleListRow: View {
     var body: some View {
         Button(action: onSelect) {
             HStack(spacing: 12) {
-                AhCoverImage(
-                    url: card.coverUrl,
-                    targetSize: .standardCard,
-                    imageCache: imageCache
-                )
-                .frame(width: 72, height: 100)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                ZStack(alignment: .bottomLeading) {
+                    AhCoverImage(
+                        url: card.coverUrl,
+                        targetSize: .standardCard,
+                        imageCache: imageCache
+                    )
+                    .frame(width: 116, height: 68)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
 
-                VStack(alignment: .leading, spacing: 5) {
+                    if !card.episodeLabel.isEmpty {
+                        Text("EP \(card.episodeLabel)")
+                            .font(.system(size: 9, weight: .heavy))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(palette.crimson, in: RoundedRectangle(cornerRadius: 3))
+                            .padding(5)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
                     Text(card.title)
                         .font(.subheadline.weight(.bold))
                         .foregroundStyle(palette.textPrimary)
@@ -311,24 +522,16 @@ struct ScheduleListRow: View {
 
                     if !card.japaneseTitle.isEmpty {
                         Text(card.japaneseTitle)
-                            .font(.caption)
+                            .font(.caption2)
                             .foregroundStyle(palette.textMuted)
                             .lineLimit(1)
                     }
 
                     HStack(spacing: 8) {
-                        if !card.episodeLabel.isEmpty {
-                            Text("Ep \(card.episodeLabel)")
-                                .font(.caption2.weight(.bold))
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 7)
-                                .padding(.vertical, 3)
-                                .background(palette.crimson, in: Capsule())
-                        }
                         RankOrTimerBadge(card: card)
                         if isBookmarked {
                             Image(systemName: "bookmark.fill")
-                                .font(.caption)
+                                .font(.caption2)
                                 .foregroundStyle(palette.crimson)
                         }
                     }
@@ -338,9 +541,9 @@ struct ScheduleListRow: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(palette.textMuted)
             }
-            .padding(10)
-            .background(palette.surface, in: RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(palette.borderSubtle, lineWidth: 1))
+            .padding(8)
+            .background(palette.surface, in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.09), lineWidth: 1))
         }
         .buttonStyle(.plain)
     }
@@ -357,32 +560,39 @@ struct ScheduleGridCard: View {
     var body: some View {
         Button(action: onSelect) {
             VStack(alignment: .leading, spacing: 6) {
-                ZStack(alignment: .topTrailing) {
+                ZStack(alignment: .bottomLeading) {
                     AhCoverImage(
                         url: card.coverUrl,
                         targetSize: .standardCard,
                         imageCache: imageCache
                     )
                     .aspectRatio(0.70, contentMode: .fill)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 10)
-                            .stroke(palette.borderSubtle, lineWidth: 1)
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.white.opacity(0.12), lineWidth: 1)
                     )
 
+                    LinearGradient(
+                        colors: [.clear, Color.black.opacity(0.72)],
+                        startPoint: .center,
+                        endPoint: .bottom
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+
                     if !card.episodeLabel.isEmpty {
-                        Text(card.episodeLabel)
-                            .font(.caption2.weight(.heavy))
+                        Text("EP \(card.episodeLabel)")
+                            .font(.system(size: 10, weight: .heavy))
                             .foregroundStyle(.white)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 3)
-                            .background(palette.crimson, in: RoundedRectangle(cornerRadius: 6))
+                            .background(palette.crimson, in: RoundedRectangle(cornerRadius: 4))
                             .padding(6)
                     }
                 }
 
                 Text(card.title)
-                    .font(.caption.weight(.semibold))
+                    .font(.caption.weight(.bold))
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
@@ -417,8 +627,8 @@ struct RankOrTimerBadge: View {
             .foregroundStyle(dir == .up ? palette.positiveGreen : (dir == .down ? palette.crimson : palette.textSecondary))
         } else if !card.timerOrStatus.isEmpty {
             Text(card.timerOrStatus)
-                .font(.caption2)
-                .foregroundStyle(palette.textSecondary)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(palette.positiveGreen)
                 .lineLimit(1)
         }
     }
@@ -456,12 +666,12 @@ struct AhErrorView: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 24)
             Button(action: onRetry) {
-                Label("Retry", systemImage: "arrow.clockwise")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 18)
+                Label("Try Again", systemImage: "arrow.clockwise")
+                    .font(.subheadline.weight(.heavy))
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 20)
                     .padding(.vertical, 10)
-                    .background(palette.crimson, in: Capsule())
+                    .background(Color.white, in: RoundedRectangle(cornerRadius: 6))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

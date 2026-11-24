@@ -27,7 +27,18 @@ struct HomeView: View {
                 }
             } else if let feed = viewModel.feed {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 18) {
+                    LazyVStack(alignment: .leading, spacing: 20) {
+                        NetflixCategoryPillStrip(
+                            seasonLabel: feed.seasonLabel,
+                            onSeasonal: {
+                                let path = feed.seasonPath ?? "2025fall.php"
+                                let label = feed.seasonLabel ?? "Season"
+                                onOpenSeasonal(path, label)
+                            },
+                            onPopular: onOpenPopular,
+                            onRandom: onOpenRandom
+                        )
+
                         HeroBannerPager(
                             banners: feed.banners,
                             imageCache: imageCache,

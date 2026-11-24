@@ -30,25 +30,25 @@ public struct AhThemePalette: Sendable, Equatable {
     }
 
     private static func buildPalette(for themeId: AhThemeId) -> AhThemePalette {
-        let crimson = Color(hex: 0xDD0021)
-        let crimsonDark = Color(hex: 0x9E0017)
-        let green = Color(hex: 0x28C76F)
+        let crimson = Color(hex: 0xE50914) // Signature Netflix Red
+        let crimsonDark = Color(hex: 0xB20710)
+        let green = Color(hex: 0x46D369) // Netflix Match Green
 
         switch themeId {
         case .dark:
             return AhThemePalette(
                 themeId: themeId,
-                background: Color(hex: 0x000000),
-                gradientColors: nil,
-                surface: Color(hex: 0x121212),
-                surfaceElevated: Color(hex: 0x1A1A1A),
-                surfacePressed: Color(hex: 0x242424),
+                background: Color(hex: 0x0B0B0B),
+                gradientColors: [Color(hex: 0x1E0A0D), Color(hex: 0x0B0B0B), Color(hex: 0x0B0B0B)],
+                surface: Color(hex: 0x141414),
+                surfaceElevated: Color(hex: 0x1F1F1F),
+                surfacePressed: Color(hex: 0x2B2B2B),
                 crimson: crimson,
                 crimsonDark: crimsonDark,
                 textPrimary: .white,
-                textSecondary: Color(hex: 0xBDBDBD),
-                textMuted: Color(hex: 0x8A8A8A),
-                borderSubtle: Color(hex: 0x262626),
+                textSecondary: Color(hex: 0xD2D2D2),
+                textMuted: Color(hex: 0x8C8C8C),
+                borderSubtle: Color(hex: 0x2A2A2A),
                 positiveGreen: green,
                 isLight: false
             )
@@ -139,7 +139,7 @@ public struct AhScreenBackground: View {
     public var body: some View {
         Group {
             if let colors = palette.gradientColors {
-                LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
+                LinearGradient(colors: colors, startPoint: .top, endPoint: .bottom)
             } else {
                 palette.background
             }

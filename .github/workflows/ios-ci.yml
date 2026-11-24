@@ -2,7 +2,7 @@ name: iOS Build, Core Tests & Simulator UI Tests
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, netflix-ui ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:

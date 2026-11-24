@@ -141,7 +141,7 @@ struct RootTabView: View {
                 .tabItem { Label("Bookmarks", systemImage: "bookmark.fill") }
                 .tag(AppTab.bookmarks)
             }
-            .tint(palette.crimson)
+            .tint(palette.isLight ? palette.crimson : .white)
 
             if isResolvingRandom {
                 Color.black.opacity(0.45).ignoresSafeArea()
