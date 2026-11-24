@@ -17,6 +17,10 @@ final class AnimeHeavenUITests: XCTestCase {
         XCTAssertTrue(app.buttons["tab.new"].exists)
         XCTAssertTrue(app.buttons["tab.popular"].exists)
         XCTAssertTrue(app.buttons["tab.bookmarks"].exists)
+        let header = app.staticTexts["topbar.title"]
+        XCTAssertTrue(header.waitForExistence(timeout: 5))
+        XCTAssertEqual(header.label, "For You")
+        XCTAssertGreaterThan(header.frame.width, 48, "The Home title must not collapse into an icon-only tile.")
         sleep(5)
         attachScreenshot(named: "01-ios-home-schedule")
 

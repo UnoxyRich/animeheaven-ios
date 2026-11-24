@@ -111,19 +111,9 @@ struct HomeView: View {
                 }
             }
         }
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                AhBrandToolbarTitle(title: "For You")
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                AhTopActionButtons(
-                    onSearch: onOpenSearch,
-                    onRandom: onOpenRandom,
-                    onSettings: onOpenSettings
-                )
-            }
+        .toolbar(.hidden, for: .navigationBar)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            AhRootNavigationBar(title: "For You", onSearch: onOpenSearch, onRandom: onOpenRandom, onSettings: onOpenSettings)
         }
         .onAppear {
             viewModel.startObservingLocalState()

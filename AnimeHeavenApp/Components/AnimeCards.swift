@@ -1,46 +1,35 @@
 import SwiftUI
 import AnimeHeavenCore
 
-/// 2025/2026 Netflix Mobile Top Bar Brand: Condensed bold red "A" monogram + contextual title.
-struct AhBrandToolbarTitle: View {
+/// Root-tab chrome uses its own bounds: iOS 26 sizes native leading items as icon buttons.
+struct AhRootNavigationBar: View {
     @Environment(\.ahPalette) private var palette
     let title: String
-    let seasonLabel: String?
-    let onTapSeason: (() -> Void)?
-
-    init(
-        title: String = "For You",
-        seasonLabel: String? = nil,
-        onTapSeason: (() -> Void)? = nil
-    ) {
-        self.title = title
-        self.seasonLabel = seasonLabel
-        self.onTapSeason = onTapSeason
-    }
+    let onSearch: () -> Void
+    let onRandom: () -> Void
+    let onSettings: () -> Void
 
     var body: some View {
-        HStack(spacing: 8) {
-            Text("A")
-                .font(.system(size: 26, weight: .black))
-                .foregroundStyle(palette.crimson)
-
-            Text(title)
-                .font(.system(size: 19, weight: .heavy))
-                .foregroundStyle(palette.textPrimary)
-                .lineLimit(1)
-
-            if let seasonLabel, !seasonLabel.isEmpty, let onTapSeason {
-                Button(action: onTapSeason) {
-                    Text(seasonLabel)
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(palette.textPrimary)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 4)
-                        .liquidGlass(in: Capsule())
-                }
-                .buttonStyle(.plain)
+        HStack(spacing: 12) {
+            HStack(spacing: 8) {
+                Text("A")
+                    .font(.system(size: 26, weight: .black))
+                    .foregroundStyle(palette.crimson)
+                    .accessibilityHidden(true)
+                Text(title)
+                    .font(.system(size: 19, weight: .heavy))
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                    .accessibilityAddTraits(.isHeader)
+                    .accessibilityIdentifier("topbar.title")
             }
+            .layoutPriority(1)
+            Spacer(minLength: 0)
+            AhTopActionButtons(onSearch: onSearch, onRandom: onRandom, onSettings: onSettings, rootLayout: true)
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 4)
     }
 }
 
@@ -50,13 +39,16 @@ struct AhTopActionButtons: View {
     let onSearch: () -> Void
     let onRandom: () -> Void
     let onSettings: () -> Void
+    var rootLayout: Bool = false
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: rootLayout ? 0 : 14) {
             Button(action: onSearch) {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
+                    .frame(width: rootLayout ? 44 : nil, height: rootLayout ? 44 : nil)
+                    .contentShape(Rectangle())
             }
             .accessibilityLabel("Search")
             .accessibilityIdentifier("topbar.search")
@@ -65,6 +57,8 @@ struct AhTopActionButtons: View {
                 Image(systemName: "shuffle")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
+                    .frame(width: rootLayout ? 44 : nil, height: rootLayout ? 44 : nil)
+                    .contentShape(Rectangle())
             }
             .accessibilityLabel("Random Anime")
             .accessibilityIdentifier("topbar.random")
@@ -73,12 +67,14 @@ struct AhTopActionButtons: View {
                 Image(systemName: "gearshape.fill")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
+                    .frame(width: rootLayout ? 44 : nil, height: rootLayout ? 44 : nil)
+                    .contentShape(Rectangle())
             }
             .accessibilityLabel("Settings")
             .accessibilityIdentifier("topbar.settings")
         }
-        .padding(.horizontal, 13)
-        .padding(.vertical, 7)
+        .padding(.horizontal, rootLayout ? 3 : 13)
+        .padding(.vertical, rootLayout ? 0 : 7)
         .liquidGlass(in: Capsule(), interactive: true)
     }
 }

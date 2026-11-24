@@ -112,19 +112,9 @@ struct BookmarksView: View {
                 }
             }
         }
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                AhBrandToolbarTitle(title: "My Bookmarks")
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                AhTopActionButtons(
-                    onSearch: onOpenSearch,
-                    onRandom: onOpenRandom,
-                    onSettings: onOpenSettings
-                )
-            }
+        .toolbar(.hidden, for: .navigationBar)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            AhRootNavigationBar(title: "My Bookmarks", onSearch: onOpenSearch, onRandom: onOpenRandom, onSettings: onOpenSettings)
         }
         .alert("Clear Watch History?", isPresented: $confirmClearHistory) {
             Button("Clear", role: .destructive) { viewModel.clearWatchHistory() }

@@ -106,19 +106,23 @@ struct CatalogView: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .navigationTitle(isRootTab ? "" : viewModel.title)
+        .toolbar(isRootTab ? .hidden : .visible, for: .navigationBar)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if isRootTab {
+                AhRootNavigationBar(title: viewModel.title, onSearch: onOpenSearch,
+                    onRandom: onOpenRandom, onSettings: onOpenSettings)
+            }
+        }
         .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
         .toolbar {
-            if isRootTab {
-                ToolbarItem(placement: .topBarLeading) {
-                    AhBrandToolbarTitle(title: viewModel.title)
+            if !isRootTab {
+                ToolbarItem(placement: .topBarTrailing) {
+                    AhTopActionButtons(
+                        onSearch: onOpenSearch,
+                        onRandom: onOpenRandom,
+                        onSettings: onOpenSettings
+                    )
                 }
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                AhTopActionButtons(
-                    onSearch: onOpenSearch,
-                    onRandom: onOpenRandom,
-                    onSettings: onOpenSettings
-                )
             }
         }
         .onAppear {
