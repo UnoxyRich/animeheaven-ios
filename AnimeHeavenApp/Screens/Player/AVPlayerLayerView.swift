@@ -75,8 +75,8 @@ public final class PipCoordinator: NSObject, AVPictureInPictureControllerDelegat
         _ pictureInPictureController: AVPictureInPictureController,
         restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void
     ) {
-        Task { @MainActor [weak self] in
-            if let handler = self?.onRestoreUserInterface {
+        MainActor.assumeIsolated {
+            if let handler = self.onRestoreUserInterface {
                 handler(completionHandler)
             } else {
                 completionHandler(true)
