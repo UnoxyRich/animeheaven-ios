@@ -126,11 +126,14 @@ struct AnimeDetailView: View {
         // Full-bleed Netflix hero backdrop
         ZStack(alignment: .bottomLeading) {
             AhCoverImage(
-                url: detail.bannerUrl ?? detail.posterUrl,
-                targetSize: .heroBanner,
-                imageCache: imageCache
+                url: detail.landscapeCoverUrl ?? detail.bannerUrl ?? detail.posterUrl,
+                targetSize: .detailHero,
+                imageCache: imageCache,
+                artwork: .init(animeId: detail.id, title: detail.title, japaneseTitle: detail.japaneseTitle,
+                               year: Int(detail.year.prefix(4)), priority: .high)
             )
-            .frame(height: 220)
+            .aspectRatio(16.0 / 9.0, contentMode: .fit)
+            .frame(maxHeight: 260)
             .frame(maxWidth: .infinity)
             .clipped()
             .overlay(
@@ -215,7 +218,7 @@ struct AnimeDetailView: View {
             VStack(spacing: 9) {
                 if let target = viewModel.primaryAction {
                     Button {
-                        onPlayEpisode(target.episodeKey, detail.id, detail.title, detail.posterUrl)
+                        onPlayEpisode(target.episodeKey, detail.id, detail.title, detail.landscapeCoverUrl ?? "")
                     } label: {
                         Label(target.buttonLabel, systemImage: "play.fill")
                             .font(.subheadline.weight(.heavy))
@@ -295,7 +298,7 @@ struct AnimeDetailView: View {
                     }()
 
                     Button {
-                        onPlayEpisode(ep.key, detail.id, detail.title, detail.posterUrl)
+                        onPlayEpisode(ep.key, detail.id, detail.title, detail.landscapeCoverUrl ?? "")
                     } label: {
                         VStack(spacing: 4) {
                             Text(isWatched ? "WATCHED" : "EP")
@@ -358,9 +361,11 @@ struct AnimeDetailView: View {
                                 AhCoverImage(
                                     url: show.coverUrl,
                                     targetSize: .popularCard,
-                                    imageCache: imageCache
+                                    imageCache: imageCache,
+                                    artwork: .init(animeId: show.id, title: show.title, japaneseTitle: show.japaneseTitle),
+                                    slot: .portrait2x3
                                 )
-                                .frame(width: 112, height: 158)
+                                .frame(width: 112, height: 168)
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 8)

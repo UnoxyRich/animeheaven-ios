@@ -13,6 +13,7 @@
 		58FFB3F96D26E2DE7A371D1D /* AnimeCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D4C1842F06E40686DB0B901 /* AnimeCards.swift */; };
 		912D4CC5BB4A402CBEAD7602 /* LiquidGlass.swift in Sources */ = {isa = PBXBuildFile; fileRef = 912D4CC5BB4A402CBEAD7601 /* LiquidGlass.swift */; };
 		A452FDFB48DEA3A98E712D30 /* ImageCacheManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93A7D263AB55F1D5E7D00395 /* ImageCacheManager.swift */; };
+		781CC9EADDB5457488FE6110 /* ArtworkStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 781CC9EADDB5457488FE6111 /* ArtworkStore.swift */; };
 		FA4F8E71EACB56517B49900C /* RootTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64AE9FB974B40AB18DA74846 /* RootTabView.swift */; };
 		7A64F41E3C71CDB27BC7D880 /* AnimeDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8530C5CF20E0EA8AB0659F2 /* AnimeDetailView.swift */; };
 		189036400915404EE3539A28 /* BookmarksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEC671D179E05CBCD0FAF99E /* BookmarksView.swift */; };
@@ -49,6 +50,7 @@
 		9D4C1842F06E40686DB0B901 /* AnimeCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AnimeHeavenApp/Components/AnimeCards.swift"; sourceTree = SOURCE_ROOT; };
 		912D4CC5BB4A402CBEAD7601 /* LiquidGlass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AnimeHeavenApp/Components/LiquidGlass.swift"; sourceTree = SOURCE_ROOT; };
 		93A7D263AB55F1D5E7D00395 /* ImageCacheManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AnimeHeavenApp/Images/ImageCacheManager.swift"; sourceTree = SOURCE_ROOT; };
+		781CC9EADDB5457488FE6111 /* ArtworkStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AnimeHeavenApp/Images/ArtworkStore.swift"; sourceTree = SOURCE_ROOT; };
 		64AE9FB974B40AB18DA74846 /* RootTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AnimeHeavenApp/Navigation/RootTabView.swift"; sourceTree = SOURCE_ROOT; };
 		F8530C5CF20E0EA8AB0659F2 /* AnimeDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AnimeHeavenApp/Screens/AnimeDetailView.swift"; sourceTree = SOURCE_ROOT; };
 		AEC671D179E05CBCD0FAF99E /* BookmarksView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AnimeHeavenApp/Screens/BookmarksView.swift"; sourceTree = SOURCE_ROOT; };
@@ -108,6 +110,7 @@
 				9D4C1842F06E40686DB0B901 /* AnimeCards.swift */,
 				912D4CC5BB4A402CBEAD7601 /* LiquidGlass.swift */,
 				93A7D263AB55F1D5E7D00395 /* ImageCacheManager.swift */,
+				781CC9EADDB5457488FE6111 /* ArtworkStore.swift */,
 				64AE9FB974B40AB18DA74846 /* RootTabView.swift */,
 				F8530C5CF20E0EA8AB0659F2 /* AnimeDetailView.swift */,
 				AEC671D179E05CBCD0FAF99E /* BookmarksView.swift */,
@@ -254,6 +257,7 @@
 				58FFB3F96D26E2DE7A371D1D /* AnimeCards.swift in Sources */,
 				912D4CC5BB4A402CBEAD7602 /* LiquidGlass.swift in Sources */,
 				A452FDFB48DEA3A98E712D30 /* ImageCacheManager.swift in Sources */,
+				781CC9EADDB5457488FE6110 /* ArtworkStore.swift in Sources */,
 				FA4F8E71EACB56517B49900C /* RootTabView.swift in Sources */,
 				7A64F41E3C71CDB27BC7D880 /* AnimeDetailView.swift in Sources */,
 				189036400915404EE3539A28 /* BookmarksView.swift in Sources */,

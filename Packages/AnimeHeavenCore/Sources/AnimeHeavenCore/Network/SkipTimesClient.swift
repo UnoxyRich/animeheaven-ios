@@ -123,11 +123,12 @@ public actor SkipTimesClient {
 
     private let session: URLSession
     private let database: SQLiteDatabase?
+    private let artworkResolver: AnimeArtworkResolver?
     private let malIdCache = LruCache<String, Int>(maxEntries: 256)
     private let skipCache = LruCache<String, EpisodeSkipTimes>(maxEntries: 128)
     private var inFlightMalLookups: [String: Task<Int?, Never>] = [:]
 
-    public init(session: URLSession? = nil, database: SQLiteDatabase? = nil) {
+    public init(session: URLSession? = nil, database: SQLiteDatabase? = nil, artworkResolver: AnimeArtworkResolver? = nil) {
         if let session {
             self.session = session
         } else {
@@ -137,6 +138,7 @@ public actor SkipTimesClient {
             self.session = URLSession(configuration: config)
         }
         self.database = database
+        self.artworkResolver = artworkResolver
     }
 
     public func fetchSkipTimes(animeTitle: String, episodeNumber: Int) async -> EpisodeSkipTimes {
@@ -198,6 +200,7 @@ public actor SkipTimesClient {
     }
 
     private func resolveMalId(rawTitle: String, normalized: String) async -> Int? {
+        if let artworkResolver { return await artworkResolver.resolveMalId(title: rawTitle) }
         if let mem = malIdCache.get(normalized) {
             return mem > 0 ? mem : nil
         }

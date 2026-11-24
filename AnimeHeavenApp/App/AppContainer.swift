@@ -39,8 +39,14 @@ public final class AppContainer {
         )
     }()
 
+    lazy var artworkResolver: AnimeArtworkResolver = {
+        let policy = networkPolicy
+        return AnimeArtworkResolver(database: database, dataSaver: { policy.effectiveMode == .dataSaver })
+    }()
+    lazy var artworkStore = ArtworkStore(resolver: artworkResolver)
+
     public lazy var skipTimesClient: SkipTimesClient = {
-        SkipTimesClient(database: database)
+        SkipTimesClient(database: database, artworkResolver: artworkResolver)
     }()
 
     public lazy var mirrorHealthTracker: MirrorHealthTracker = {
@@ -130,9 +136,11 @@ public final class AppContainer {
         let tracker = self.mirrorHealthTracker
         let booster = self.chunkBooster
         let images = imageCacheManager
+        let artwork = artworkResolver
 
         Task.detached(priority: .utility) {
             async let imageWarmup: Void = images.warmUp()
+            async let artworkWarmup: Void = artwork.hydrateRecentFromDisk()
             let learnedHosts = tracker.topHealthyHosts(limit: 2).map { "https://\($0)" }
             client.preconnectHosts([AnimeHeavenClient.baseURL] + learnedHosts)
 
@@ -161,6 +169,7 @@ public final class AppContainer {
             try? await Task.sleep(for: .seconds(9))
             await repository.pruneExpiredCache()
             await imageWarmup
+            await artworkWarmup
         }
     }
 
@@ -168,11 +177,19 @@ public final class AppContainer {
         let repo = self.repository
         let skip = self.skipTimesClient
         let img = self.imageCacheManager
+        let artwork = artworkResolver
         Task.detached(priority: .utility) {
             await img.clearMemoryCache()
+            await artwork.trimMemory()
             await repo.trimMemory(aggressive: true)
             await skip.trimMemory()
         }
+    }
+
+    func clearWebAndArtworkCache() async {
+        let repository = self.repository
+        await artworkResolver.withCacheCleared { await repository.clearWebCache() }
+        artworkStore.didClearCache()
     }
 
     public struct CacheStorageSummary: Sendable {

@@ -173,9 +173,11 @@ struct SearchView: View {
                                     AhCoverImage(
                                         url: item.coverUrl,
                                         targetSize: .searchThumb,
-                                        imageCache: imageCache
+                                        imageCache: imageCache,
+                                        artwork: .init(animeId: item.animeId, title: item.title),
+                                        slot: .portrait2x3
                                     )
-                                    .frame(width: 56, height: 76)
+                                    .frame(width: 56, height: 84)
                                     .clipShape(RoundedRectangle(cornerRadius: 8))
 
                                     Text(item.title)

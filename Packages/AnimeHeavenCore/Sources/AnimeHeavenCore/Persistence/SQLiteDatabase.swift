@@ -394,6 +394,26 @@ public actor SQLiteDatabase {
         return out
     }
 
+    func getRecentArtwork(since: Int64, limit: Int = 128) -> [WebCacheRecord] {
+        guard let db else { return [] }
+        let sql = """
+            SELECT cacheKey, payload, fetchedAt FROM web_cache
+            WHERE cacheKey LIKE 'artwork:ah:%' AND fetchedAt >= ?
+            ORDER BY fetchedAt DESC LIMIT ?;
+        """
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK, let stmt else { return [] }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_int64(stmt, 1, since)
+        sqlite3_bind_int(stmt, 2, Int32(limit))
+        var rows: [WebCacheRecord] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            rows.append(WebCacheRecord(cacheKey: columnString(stmt, 0), payload: columnString(stmt, 1),
+                                       fetchedAt: sqlite3_column_int64(stmt, 2)))
+        }
+        return rows
+    }
+
     public func upsertWebCache(_ record: WebCacheRecord) {
         guard let db else { return }
         let sql = """

@@ -66,10 +66,12 @@ struct BookmarksView: View {
                                                 VStack(alignment: .leading, spacing: 6) {
                                                     AhCoverImage(
                                                         url: item.coverUrl,
-                                                        targetSize: .standardCard,
-                                                        imageCache: imageCache
+                                                        targetSize: .popularCard,
+                                                        imageCache: imageCache,
+                                                        artwork: .init(animeId: item.animeId, title: item.title),
+                                                        slot: .portrait2x3
                                                     )
-                                                    .aspectRatio(0.70, contentMode: .fill)
+                                                    .aspectRatio(2.0 / 3.0, contentMode: .fit)
                                                     .clipShape(RoundedRectangle(cornerRadius: 10))
                                                     .overlay(
                                                         RoundedRectangle(cornerRadius: 10)

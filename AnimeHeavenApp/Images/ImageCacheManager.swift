@@ -4,6 +4,16 @@ import ImageIO
 import UIKit
 import AnimeHeavenCore
 
+private final class ArtworkImageRedirects: NSObject, URLSessionTaskDelegate {
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest) async -> URLRequest? {
+        var request = request
+        guard request.url?.scheme?.lowercased() == "https" else { return nil }
+        request.setValue(ArtworkImageHeaders.referer(forHost: request.url?.host), forHTTPHeaderField: "Referer")
+        return request
+    }
+}
+
 /// Hardware-downsampled image cache backed by `NSCache<NSString, UIImage>` + 250 MB LRU disk cache.
 /// Uses a dedicated `URLSession` with `urlCache = nil` (eliminating double disk caching) and
 /// `CGImageSourceCreateThumbnailAtIndex` so full-resolution bitmaps never enter RAM.
@@ -34,11 +44,8 @@ public actor ImageCacheManager {
         config.urlCache = nil // Dedicated disk cache below avoids writing image bytes twice
         config.httpMaximumConnectionsPerHost = 10
         config.timeoutIntervalForRequest = 12
-        config.httpAdditionalHeaders = [
-            "User-Agent": AnimeHeavenClient.userAgent,
-            "Referer": "\(AnimeHeavenClient.baseURL)/"
-        ]
-        self.session = URLSession(configuration: config)
+        config.httpAdditionalHeaders = ["User-Agent": AnimeHeavenClient.userAgent]
+        self.session = URLSession(configuration: config, delegate: ArtworkImageRedirects(), delegateQueue: nil)
 
     }
 
@@ -93,7 +100,9 @@ public actor ImageCacheManager {
             }
             // 2. Fetch over network
             do {
-                let (data, response) = try await session.data(from: url)
+                var request = URLRequest(url: url)
+                request.setValue(ArtworkImageHeaders.referer(forHost: url.host), forHTTPHeaderField: "Referer")
+                let (data, response) = try await session.data(for: request)
                 guard let http = response as? HTTPURLResponse,
                       (200..<300).contains(http.statusCode),
                       !data.isEmpty, !Task.isCancelled else {

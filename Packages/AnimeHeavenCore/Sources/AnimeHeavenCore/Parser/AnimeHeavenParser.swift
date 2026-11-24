@@ -219,6 +219,7 @@ public enum AnimeHeavenParser {
         let rawBanner = normalizeUrl(try? doc.select("div.banner img.bannerimg").first()?.attr("src"))
         let bannerUrl = rawBanner.isEmpty ? nil : rawBanner
         let posterUrl = normalizeUrl(try? doc.select("div.infoimg img.posterimg").first()?.attr("src"))
+        let landscapeCover = normalizeUrl(try? doc.select("meta[property=og:image]").first()?.attr("content"))
         let title = (try? doc.select("div.infotitle").first()?.text())?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let rawJp = (try? doc.select("div.infotitlejp").first()?.text())?
@@ -298,7 +299,8 @@ public enum AnimeHeavenParser {
             countdownLabel: countdownLabel,
             episodes: episodes,
             relatedShows: relatedShows,
-            similarShows: similarShows
+            similarShows: similarShows,
+            landscapeCoverUrl: !landscapeCover.isEmpty && landscapeCover != bannerUrl && landscapeCover != posterUrl ? landscapeCover : nil
         )
     }
 

@@ -23,6 +23,7 @@ struct AnimeHeavenApp: App {
                 let palette = AhThemePalette.palette(for: container.settingsStore.themeId)
                 RootTabView(container: container)
                     .environment(\.ahPalette, palette)
+                    .environment(\.artworkStore, container.artworkStore)
                     .preferredColorScheme(palette.isLight ? .light : .dark)
                     .tint(palette.crimson)
                     .onAppear { container.warmUpOnStartup() }

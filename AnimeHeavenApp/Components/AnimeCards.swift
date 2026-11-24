@@ -148,6 +148,7 @@ struct HeroBannerPager: View {
     @Environment(\.ahPalette) private var palette
     @Environment(\.scenePhase) private var scenePhase
     @State private var currentIndex: Int = 0
+    @State private var pagerWidth: CGFloat = 390
 
     private var shouldAutoScroll: Bool {
         isAutoScrollEnabled
@@ -171,7 +172,9 @@ struct HeroBannerPager: View {
                             AhCoverImage(
                                 url: banner.bannerImageUrl,
                                 targetSize: .heroBanner,
-                                imageCache: imageCache
+                                imageCache: imageCache,
+                                artwork: .init(animeId: banner.animeId, title: banner.title,
+                                               priority: idx == currentIndex ? .high : .cachedOnly)
                             )
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
@@ -277,7 +280,8 @@ struct HeroBannerPager: View {
                     }
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
-                .frame(height: 332)
+                .frame(height: min(max(1, pagerWidth - 32) / 1.6, 300))
+                .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { pagerWidth = $0 }
 
                 // Dedicated non-overlapping Netflix capsule page indicator
                 if banners.count > 1 {
@@ -338,7 +342,10 @@ struct ContinueWatchingRow: View {
                                         AhCoverImage(
                                             url: item.coverUrl,
                                             targetSize: .continueCard,
-                                            imageCache: imageCache
+                                            imageCache: imageCache,
+                                            artwork: .init(animeId: item.animeId, title: item.animeTitle, priority: .high),
+                                            episodeNumber: SkipTimesParser.parseEpisodeNumber(item.targetEpisodeLabel),
+                                            nativeLandscapeFirst: true
                                         )
                                         .frame(width: 204, height: 115)
 
@@ -482,9 +489,11 @@ struct PopularHorizontalStrip: View {
                                         AhCoverImage(
                                             url: card.coverUrl,
                                             targetSize: .popularCard,
-                                            imageCache: imageCache
+                                            imageCache: imageCache,
+                                            artwork: .init(animeId: card.id, title: card.title, japaneseTitle: card.japaneseTitle, priority: .featured),
+                                            slot: .portrait2x3
                                         )
-                                        .frame(width: 114, height: 164)
+                                        .frame(width: 114, height: 171)
 
                                         LinearGradient(
                                             stops: [
@@ -566,9 +575,11 @@ struct ScheduleListRow: View {
                     AhCoverImage(
                         url: card.coverUrl,
                         targetSize: .standardCard,
-                        imageCache: imageCache
+                        imageCache: imageCache,
+                        artwork: .init(animeId: card.id, title: card.title, priority: .cachedOnly),
+                        nativeLandscapeFirst: true
                     )
-                    .frame(width: 116, height: 68)
+                    .frame(width: 120, height: 67.5)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
 
                     if !card.episodeLabel.isEmpty {
@@ -637,10 +648,12 @@ struct ScheduleGridCard: View {
                 ZStack(alignment: .bottomLeading) {
                     AhCoverImage(
                         url: card.coverUrl,
-                        targetSize: .standardCard,
-                        imageCache: imageCache
+                        targetSize: .popularCard,
+                        imageCache: imageCache,
+                        artwork: .init(animeId: card.id, title: card.title, japaneseTitle: card.japaneseTitle),
+                        slot: .portrait2x3
                     )
-                    .aspectRatio(0.70, contentMode: .fill)
+                    .aspectRatio(2.0 / 3.0, contentMode: .fit)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                     .overlay(
                         RoundedRectangle(cornerRadius: 8)

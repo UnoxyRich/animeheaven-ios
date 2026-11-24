@@ -141,7 +141,7 @@ struct SettingsView: View {
                     }
                     Button("Clear Web & Metadata Cache", role: .destructive) {
                         Task {
-                            await container.repository.clearWebCache()
+                            await container.clearWebAndArtworkCache()
                             await container.preloader.resetSessionMarkers()
                             await reloadCacheStats("Cleared web cache")
                         }

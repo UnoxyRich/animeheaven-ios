@@ -90,6 +90,7 @@ public enum AhThemeId: String, Codable, Sendable, Hashable, CaseIterable, Identi
 
 public enum ImageTargetSize: String, Sendable, Hashable, CaseIterable {
     case heroBanner
+    case detailHero
     case detailPoster
     case continueCard
     case popularCard
@@ -98,23 +99,24 @@ public enum ImageTargetSize: String, Sendable, Hashable, CaseIterable {
 
     public var widthPx: Int {
         switch self {
-        case .heroBanner: return 1080
+        case .heroBanner, .detailHero: return 1280
         case .detailPoster: return 360
         case .continueCard: return 480
-        case .popularCard: return 320
-        case .standardCard: return 420
-        case .searchThumb: return 256
+        case .popularCard: return 360
+        case .standardCard: return 480
+        case .searchThumb: return 180
         }
     }
 
     public var heightPx: Int {
         switch self {
-        case .heroBanner: return 460
+        case .heroBanner: return 800
+        case .detailHero: return 720
         case .detailPoster: return 540
         case .continueCard: return 270
-        case .popularCard: return 320
-        case .standardCard: return 236
-        case .searchThumb: return 144
+        case .popularCard: return 540
+        case .standardCard: return 270
+        case .searchThumb: return 270
         }
     }
 
@@ -249,6 +251,7 @@ public struct AnimeDetail: Codable, Sendable, Hashable, Identifiable {
     public let japaneseTitle: String
     public let bannerUrl: String?
     public let posterUrl: String
+    public let landscapeCoverUrl: String?
     public let synopsis: String
     public let tags: [String]
     public let episodesLabel: String
@@ -273,13 +276,15 @@ public struct AnimeDetail: Codable, Sendable, Hashable, Identifiable {
         countdownLabel: String?,
         episodes: [EpisodeItem],
         relatedShows: [AnimeCard],
-        similarShows: [AnimeCard]
+        similarShows: [AnimeCard],
+        landscapeCoverUrl: String? = nil
     ) {
         self.id = id
         self.title = title
         self.japaneseTitle = japaneseTitle
         self.bannerUrl = bannerUrl
         self.posterUrl = posterUrl
+        self.landscapeCoverUrl = landscapeCoverUrl
         self.synopsis = synopsis
         self.tags = tags
         self.episodesLabel = episodesLabel

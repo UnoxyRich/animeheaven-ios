@@ -148,7 +148,10 @@ jobs:
           ls -lh screenshots/
 
       - name: Require the complete iOS walkthrough
-        run: test "$(find screenshots -maxdepth 1 -name '*.png' | wc -l)" -ge 10
+        run: |
+          for number in 01 02 03 04 05 06 07 08 09 10; do
+            compgen -G "screenshots/$number-ios-*.png" >/dev/null
+          done
 
       - name: Upload iOS App Screenshots
         if: always()
