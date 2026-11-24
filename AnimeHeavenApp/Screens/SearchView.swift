@@ -2,7 +2,8 @@ import SwiftUI
 import AnimeHeavenCore
 
 struct SearchView: View {
-    @State private var viewModel: SearchViewModel
+    @StateObject private var modelStorage: ViewModelStorage<SearchViewModel>
+    private var viewModel: SearchViewModel { modelStorage.value }
     private let imageCache: ImageCacheManager
     private let onOpenAnime: (String) -> Void
 
@@ -11,10 +12,10 @@ struct SearchView: View {
     private let gridColumns = [GridItem(.adaptive(minimum: 112, maximum: 165), spacing: 12)]
 
     init(container: AppContainer, onOpenAnime: @escaping (String) -> Void) {
-        _viewModel = State(initialValue: SearchViewModel(
+        _modelStorage = StateObject(wrappedValue: ViewModelStorage(SearchViewModel(
             gateway: RepositorySearchGateway(repository: container.repository),
             preloader: container.preloader
-        ))
+        )))
         self.imageCache = container.imageCacheManager
         self.onOpenAnime = onOpenAnime
     }

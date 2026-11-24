@@ -88,7 +88,8 @@ public actor AnimeHeavenRepository {
 
     private var _seasonHeader: (path: String?, label: String?) = (nil, nil)
 
-    private let encoder = JSONEncoder()
+    private var cacheGeneration: UInt64 = 0
+    private var cacheClearsInProgress = 0
     private let decoder = JSONDecoder()
 
     public init(
@@ -176,10 +177,12 @@ public actor AnimeHeavenRepository {
 
     @discardableResult
     public func refreshHomeFeed() async throws -> HomeFeed {
-        let html = try await coalescer.getOrFetch(key: Self.keyHome) { [client] in
+        let generation = cacheGeneration
+        let html = try await coalescer.getOrFetch(key: "\(generation):\(Self.keyHome)") { [client] in
             try await client.fetchHtml(relativePath: "index.php")
         }
         let feed = AnimeHeavenParser.parseHome(html: html)
+        guard canPersist(generation) else { return feed }
         let now = currentTimeMs()
         cachedHome = CachedEntry(value: feed, fetchedAt: now)
         updateSeasonHeader(from: feed)
@@ -219,10 +222,12 @@ public actor AnimeHeavenRepository {
         relativePath: String,
         isPopularRank: Bool
     ) async throws -> ChartFeedResult {
-        let html = try await coalescer.getOrFetch(key: cacheKey) { [client] in
+        let generation = cacheGeneration
+        let html = try await coalescer.getOrFetch(key: "\(generation):\(cacheKey)") { [client] in
             try await client.fetchHtml(relativePath: relativePath)
         }
         let result = AnimeHeavenParser.parseChartPage(html: html, isPopularRank: isPopularRank)
+        guard canPersist(generation) else { return result }
         let now = currentTimeMs()
         cachedCharts.set(cacheKey, value: CachedEntry(value: result, fetchedAt: now))
         persistCodableAsync(cacheKey: cacheKey, value: result, fetchedAt: now)
@@ -252,10 +257,12 @@ public actor AnimeHeavenRepository {
 
     @discardableResult
     public func refreshGridFeed(cacheKey: String, relativePath: String) async throws -> ChartFeedResult {
-        let html = try await coalescer.getOrFetch(key: cacheKey) { [client] in
+        let generation = cacheGeneration
+        let html = try await coalescer.getOrFetch(key: "\(generation):\(cacheKey)") { [client] in
             try await client.fetchHtml(relativePath: relativePath)
         }
         let result = AnimeHeavenParser.parseSimilarGrid(html: html)
+        guard canPersist(generation) else { return result }
         let now = currentTimeMs()
         cachedGrids.set(cacheKey, value: CachedEntry(value: result, fetchedAt: now))
         persistCodableAsync(cacheKey: cacheKey, value: result, fetchedAt: now)
@@ -286,11 +293,13 @@ public actor AnimeHeavenRepository {
 
     @discardableResult
     public func refreshAnimeDetail(animeId: String) async throws -> AnimeDetail {
+        let generation = cacheGeneration
         let dbKey = "detail:\(animeId)"
-        let html = try await coalescer.getOrFetch(key: dbKey) { [client] in
+        let html = try await coalescer.getOrFetch(key: "\(generation):\(dbKey)") { [client] in
             try await client.fetchHtml(relativePath: "anime.php?\(animeId)")
         }
         let detail = AnimeHeavenParser.parseAnimeDetail(animeId: animeId, html: html)
+        guard canPersist(generation) else { return detail }
         let now = currentTimeMs()
         cachedDetails.set(animeId, value: CachedEntry(value: detail, fetchedAt: now))
         persistCodableAsync(cacheKey: dbKey, value: detail, fetchedAt: now)
@@ -468,6 +477,12 @@ public actor AnimeHeavenRepository {
     }
 
     public func clearWebCache() async {
+        cacheGeneration &+= 1
+        cacheClearsInProgress += 1
+        defer {
+            cacheClearsInProgress -= 1
+            cacheGeneration &+= 1
+        }
         cachedHome = nil
         cachedCharts.clear()
         cachedGrids.clear()
@@ -512,29 +527,15 @@ public actor AnimeHeavenRepository {
     }
 
     private func persistHomeAsync(feed: HomeFeed, fetchedAt: Int64) {
-        let db = self.database
-        let snapURL = snapshotFileURL()
-        let enc = JSONEncoder()
-        Task.detached(priority: .utility) {
-            if let jsonData = try? enc.encode(feed),
-               let jsonString = String(data: jsonData, encoding: .utf8) {
-                await db.upsertWebCache(WebCacheRecord(
-                    cacheKey: Self.keyHome,
-                    payload: "",
-                    fetchedAt: fetchedAt,
-                    parsedJson: jsonString
-                ))
-            }
-            if let snapURL {
-                let envelope = HomeSnapshotEnvelope(fetchedAt: fetchedAt, feed: feed)
-                if let snapData = try? enc.encode(envelope) {
-                    try? FileManager.default.createDirectory(
-                        at: snapURL.deletingLastPathComponent(),
-                        withIntermediateDirectories: true
-                    )
-                    try? snapData.write(to: snapURL, options: .atomic)
-                }
-            }
+        let generation = cacheGeneration
+        Task.detached(priority: .utility) { [weak self] in
+            let enc = JSONEncoder()
+            guard let data = try? enc.encode(feed), let json = String(data: data, encoding: .utf8) else { return }
+            let envelope = HomeSnapshotEnvelope(fetchedAt: fetchedAt, feed: feed)
+            await self?.commitPersist(
+                WebCacheRecord(cacheKey: Self.keyHome, payload: "", fetchedAt: fetchedAt, parsedJson: json),
+                generation: generation, snapshotData: try? enc.encode(envelope)
+            )
         }
     }
 
@@ -543,19 +544,33 @@ public actor AnimeHeavenRepository {
         value: T,
         fetchedAt: Int64
     ) {
-        let db = self.database
-        Task.detached(priority: .utility) {
+        let generation = cacheGeneration
+        Task.detached(priority: .utility) { [weak self] in
             let enc = JSONEncoder()
             guard let data = try? enc.encode(value),
                   let jsonString = String(data: data, encoding: .utf8) else {
                 return
             }
-            await db.upsertWebCache(WebCacheRecord(
+            let record = WebCacheRecord(
                 cacheKey: cacheKey,
                 payload: "",
                 fetchedAt: fetchedAt,
                 parsedJson: jsonString
-            ))
+            )
+            await self?.commitPersist(record, generation: generation)
+        }
+    }
+
+    private func canPersist(_ generation: UInt64) -> Bool {
+        cacheClearsInProgress == 0 && generation == cacheGeneration
+    }
+
+    private func commitPersist(_ record: WebCacheRecord, generation: UInt64, snapshotData: Data? = nil) async {
+        guard canPersist(generation) else { return }
+        await database.upsertWebCache(record)
+        if canPersist(generation), let snapshotData, let url = snapshotFileURL() {
+            try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? snapshotData.write(to: url, options: .atomic)
         }
     }
 

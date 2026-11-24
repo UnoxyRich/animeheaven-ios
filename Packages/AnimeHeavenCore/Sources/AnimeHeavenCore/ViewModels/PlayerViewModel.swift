@@ -50,7 +50,6 @@ public final class PlayerViewModel {
     private var isUserPriorityActive: Bool = false
 
     public init(
-        episodeKey: String,
         animeId: String,
         animeTitle: String,
         coverUrl: String,
@@ -73,10 +72,9 @@ public final class PlayerViewModel {
         self.networkPolicy = networkPolicy
         self.preloader = preloader
 
-        loadEpisode(episodeKey: episodeKey)
     }
 
-    public func loadEpisode(episodeKey: String, forceRefreshGate: Bool = false) {
+    public func loadEpisode(episodeKey: String, forceRefreshGate: Bool = false, resumeOverrideMs: Int64? = nil) {
         loadTask?.cancel()
         skipTask?.cancel()
         isLoading = true
@@ -95,6 +93,7 @@ public final class PlayerViewModel {
             await self.chunkBooster.cancelPreloadsExcept(episodeKey)
 
             do {
+                try Task.checkCancellation()
                 async let resumeTask = self.repository.getResumePositionMs(episodeKey: episodeKey)
                 let resolved = try await self.repository.resolveEpisodeStream(
                     episodeKey: episodeKey,
@@ -103,7 +102,9 @@ public final class PlayerViewModel {
                 )
                 if Task.isCancelled { return }
 
-                let resumeMs = await resumeTask
+                let savedResumeMs = await resumeTask
+                let resumeMs = resumeOverrideMs ?? savedResumeMs
+                try Task.checkCancellation()
                 self.stream = resolved
                 self.initialResumePositionMs = resumeMs
                 if let resolvedId = resolved.animeId, !resolvedId.isEmpty {
@@ -130,6 +131,7 @@ public final class PlayerViewModel {
                 let ranked = self.chunkBooster.mirrorHealthTracker.rankMirrors(resolved.videoSources)
                 self.mirrorState = MirrorQueueState(sources: ranked, activeIndex: 0, exhausted: false)
                 try await self.bindPlaybackURL(for: ranked, episodeKey: episodeKey, resumeMs: resumeMs)
+                try Task.checkCancellation()
                 self.isLoading = false
             } catch {
                 if !Task.isCancelled {
@@ -180,6 +182,7 @@ public final class PlayerViewModel {
     }
 
     public func onPlaybackError(resumeFromMs: Int64) {
+        guard !isLoading, !mirrorState.exhausted else { return }
         if let failing = mirrorState.currentUrl {
             chunkBooster.mirrorHealthTracker.recordFailure(url: failing)
         }
@@ -191,17 +194,14 @@ public final class PlayerViewModel {
             initialResumePositionMs = resumeFromMs
             let reordered = [nextUrl] + nextState.sources.filter { $0 != nextUrl }
             let epKey = stream?.episodeKey ?? ""
-            Task { [weak self] in
-                guard let self else { return }
-                try? await self.bindPlaybackURL(for: reordered, episodeKey: epKey, resumeMs: resumeFromMs)
-            }
+            switchPlayback(to: reordered, episodeKey: epKey, resumeMs: resumeFromMs)
             return
         }
 
         if !attemptedFreshGate, let epKey = stream?.episodeKey {
             attemptedFreshGate = true
             initialResumePositionMs = resumeFromMs
-            loadEpisode(episodeKey: epKey, forceRefreshGate: true)
+            loadEpisode(episodeKey: epKey, forceRefreshGate: true, resumeOverrideMs: resumeFromMs)
             return
         }
 
@@ -209,16 +209,33 @@ public final class PlayerViewModel {
     }
 
     public func cycleMirrorManually(currentPositionMs: Int64) {
-        guard mirrorState.mirrorCount > 1 else { return }
+        guard !isLoading, mirrorState.mirrorCount > 1 else { return }
         let nextState = mirrorState.cycleManual()
         mirrorState = nextState
         hasRecordedStartForAttempt = false
         initialResumePositionMs = currentPositionMs
         guard let selected = nextState.currentUrl, let epKey = stream?.episodeKey else { return }
         let reordered = [selected] + nextState.sources.filter { $0 != selected }
-        Task { [weak self] in
+        switchPlayback(to: reordered, episodeKey: epKey, resumeMs: currentPositionMs)
+    }
+
+    private func switchPlayback(to mirrors: [String], episodeKey: String, resumeMs: Int64) {
+        loadTask?.cancel()
+        playbackURL = nil
+        errorMessage = nil
+        isLoading = true
+        loadTask = Task { [weak self] in
             guard let self else { return }
-            try? await self.bindPlaybackURL(for: reordered, episodeKey: epKey, resumeMs: currentPositionMs)
+            do {
+                try await self.bindPlaybackURL(for: mirrors, episodeKey: episodeKey, resumeMs: resumeMs, preferExplicitOrder: true)
+                try Task.checkCancellation()
+                self.isLoading = false
+            } catch {
+                guard !Task.isCancelled else { return }
+                self.isLoading = false
+                self.errorMessage = error.localizedDescription
+                await self.setUserPriority(false)
+            }
         }
     }
 
@@ -245,24 +262,36 @@ public final class PlayerViewModel {
 
     public func shutdown() {
         loadTask?.cancel()
+        loadTask = nil
         skipTask?.cancel()
-        Task { [weak self] in
-            guard let self else { return }
-            await self.teardownActiveSession()
-            await self.setUserPriority(false)
+        skipTask = nil
+        let sessionId = activeProxySessionId
+        activeProxySessionId = nil
+        let endPriority = isUserPriorityActive
+        isUserPriorityActive = false
+        Task { [chunkBooster, proxyServer, preloader] in
+            if let sessionId {
+                await chunkBooster.stopBoosting(sessionId: sessionId)
+                await proxyServer.unregisterSession(sessionId: sessionId)
+            }
+            if endPriority { await preloader?.endUserPriorityWork() }
         }
     }
 
     private func bindPlaybackURL(
         for orderedMirrors: [String],
         episodeKey: String,
-        resumeMs: Int64
+        resumeMs: Int64,
+        preferExplicitOrder: Bool = false
     ) async throws {
         await teardownActiveSession()
+        try Task.checkCancellation()
         mirrorAttemptStartedAtMs = currentTimeMs()
         guard let primaryUrl = orderedMirrors.first else { return }
 
-        let totalLength = await chunkBooster.resolveTotalLength(urls: orderedMirrors)
+        let primaryMeta = await chunkBooster.cachedProbeMeta(for: primaryUrl)
+        let totalLength = primaryMeta?.supportsRanges == true ? (primaryMeta?.contentLength ?? -1) : -1
+        try Task.checkCancellation()
         if totalLength >= MirrorHealthTracker.minValidVideoBytes {
             let cacheKey = DiskChunkCache.buildEpisodeCacheKey(
                 episodeKey: episodeKey,
@@ -275,12 +304,16 @@ public final class PlayerViewModel {
                 cacheKey: cacheKey,
                 episodeKey: episodeKey,
                 mirrors: orderedMirrors,
-                totalLength: totalLength
+                totalLength: totalLength,
+                preferExplicitOrder: preferExplicitOrder
             )
             let localURL = try await proxyServer.registerSession(descriptor)
+            if Task.isCancelled {
+                await proxyServer.unregisterSession(sessionId: sessionId)
+                throw CancellationError()
+            }
             activeProxySessionId = sessionId
             usesProxyStream = true
-            playbackURL = localURL
 
             await chunkBooster.startBoosting(
                 session: descriptor,
@@ -288,17 +321,30 @@ public final class PlayerViewModel {
                 estimatedDurationMs: 24 * 60_000,
                 opEndMs: skipTimes.op?.endMs ?? Int64(settingsStore.skipOpSeconds) * 1000
             )
-        } else if let direct = URL(string: primaryUrl) {
-            usesProxyStream = false
-            playbackURL = direct
+            try Task.checkCancellation()
+            playbackURL = localURL
+        } else {
+            let sessionId = UUID().uuidString
+            let descriptor = StreamSessionDescriptor(
+                sessionId: sessionId, cacheKey: primaryUrl, episodeKey: episodeKey,
+                mirrors: [primaryUrl], totalLength: -1, preferExplicitOrder: true
+            )
+            let localURL = try await proxyServer.registerSession(descriptor)
+            if Task.isCancelled {
+                await proxyServer.unregisterSession(sessionId: sessionId)
+                throw CancellationError()
+            }
+            activeProxySessionId = sessionId
+            usesProxyStream = true
+            playbackURL = localURL
         }
     }
 
     private func teardownActiveSession() async {
-        await chunkBooster.stopBoosting()
         if let sid = activeProxySessionId {
-            await proxyServer.unregisterSession(sessionId: sid)
             activeProxySessionId = nil
+            await chunkBooster.stopBoosting(sessionId: sid)
+            await proxyServer.unregisterSession(sessionId: sid)
         }
     }
 

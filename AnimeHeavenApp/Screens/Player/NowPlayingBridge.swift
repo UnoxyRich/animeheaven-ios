@@ -3,9 +3,16 @@ import MediaPlayer
 
 @MainActor
 final class NowPlayingBridge {
-    private var commandTokens: [Any] = []
+    private var commandTokens: [(MPRemoteCommand, Any)] = []
+    private struct MetadataState: Equatable {
+        let title: String
+        let duration: Double
+        let rate: Float
+    }
+    private var lastState: MetadataState?
 
     func bindRemoteCommands(
+        skipSeconds: Int,
         onPlay: @escaping @MainActor () -> Void,
         onPause: @escaping @MainActor () -> Void,
         onToggle: @escaping @MainActor () -> Void,
@@ -15,36 +22,36 @@ final class NowPlayingBridge {
         let center = MPRemoteCommandCenter.shared()
 
         center.playCommand.isEnabled = true
-        commandTokens.append(center.playCommand.addTarget { _ in
+        commandTokens.append((center.playCommand, center.playCommand.addTarget { _ in
             Task { @MainActor in onPlay() }
             return .success
-        })
+        }))
 
         center.pauseCommand.isEnabled = true
-        commandTokens.append(center.pauseCommand.addTarget { _ in
+        commandTokens.append((center.pauseCommand, center.pauseCommand.addTarget { _ in
             Task { @MainActor in onPause() }
             return .success
-        })
+        }))
 
         center.togglePlayPauseCommand.isEnabled = true
-        commandTokens.append(center.togglePlayPauseCommand.addTarget { _ in
+        commandTokens.append((center.togglePlayPauseCommand, center.togglePlayPauseCommand.addTarget { _ in
             Task { @MainActor in onToggle() }
             return .success
-        })
+        }))
 
         center.skipForwardCommand.isEnabled = true
-        center.skipForwardCommand.preferredIntervals = [10]
-        commandTokens.append(center.skipForwardCommand.addTarget { _ in
-            Task { @MainActor in onSeekDelta(10) }
+        center.skipForwardCommand.preferredIntervals = [NSNumber(value: skipSeconds)]
+        commandTokens.append((center.skipForwardCommand, center.skipForwardCommand.addTarget { _ in
+            Task { @MainActor in onSeekDelta(Double(skipSeconds)) }
             return .success
-        })
+        }))
 
         center.skipBackwardCommand.isEnabled = true
-        center.skipBackwardCommand.preferredIntervals = [10]
-        commandTokens.append(center.skipBackwardCommand.addTarget { _ in
-            Task { @MainActor in onSeekDelta(-10) }
+        center.skipBackwardCommand.preferredIntervals = [NSNumber(value: skipSeconds)]
+        commandTokens.append((center.skipBackwardCommand, center.skipBackwardCommand.addTarget { _ in
+            Task { @MainActor in onSeekDelta(-Double(skipSeconds)) }
             return .success
-        })
+        }))
     }
 
     func updateMetadata(
@@ -52,13 +59,21 @@ final class NowPlayingBridge {
         episodeLabel: String,
         positionSec: Double,
         durationSec: Double,
-        isPlaying: Bool
+        playbackRate: Float,
+        force: Bool = false
     ) {
+        let state = MetadataState(
+            title: episodeLabel.isEmpty ? title : "\(title) • \(episodeLabel)",
+            duration: durationSec,
+            rate: playbackRate
+        )
+        guard force || state != lastState else { return }
+        lastState = state
         var info: [String: Any] = [
-            MPMediaItemPropertyTitle: episodeLabel.isEmpty ? title : "\(title) • \(episodeLabel)",
+            MPMediaItemPropertyTitle: state.title,
             MPMediaItemPropertyArtist: "AnimeHeaven",
             MPNowPlayingInfoPropertyElapsedPlaybackTime: max(0, positionSec),
-            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0
+            MPNowPlayingInfoPropertyPlaybackRate: playbackRate
         ]
         if durationSec > 0 {
             info[MPMediaItemPropertyPlaybackDuration] = durationSec
@@ -67,13 +82,12 @@ final class NowPlayingBridge {
     }
 
     func clearRemoteCommands() {
-        let center = MPRemoteCommandCenter.shared()
-        center.playCommand.removeTarget(nil)
-        center.pauseCommand.removeTarget(nil)
-        center.togglePlayPauseCommand.removeTarget(nil)
-        center.skipForwardCommand.removeTarget(nil)
-        center.skipBackwardCommand.removeTarget(nil)
+        for (command, token) in commandTokens {
+            command.removeTarget(token)
+            command.isEnabled = false
+        }
         commandTokens.removeAll()
+        lastState = nil
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
     }
 }

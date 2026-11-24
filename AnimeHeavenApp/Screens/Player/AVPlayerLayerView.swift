@@ -1,6 +1,5 @@
 import AVFoundation
 import AVKit
-import MediaPlayer
 import SwiftUI
 import UIKit
 
@@ -42,6 +41,14 @@ public final class PipCoordinator: NSObject, AVPictureInPictureControllerDelegat
         controller?.canStartPictureInPictureAutomaticallyFromInline = true
         controller?.delegate = self
         self.pipController = controller
+    }
+
+    func detach(from playerLayer: AVPlayerLayer) {
+        guard pipController?.playerLayer === playerLayer else { return }
+        stopPip()
+        pipController?.delegate = nil
+        pipController = nil
+        onPipStateChanged = nil
     }
 
     public func startPip() {
@@ -91,6 +98,8 @@ struct AVPlayerLayerView: UIViewRepresentable {
     let resizeMode: VideoResizeMode
     let pipCoordinator: PipCoordinator
 
+    func makeCoordinator() -> PipCoordinator { pipCoordinator }
+
     func makeUIView(context: Context) -> PlayerContainerUIView {
         let view = PlayerContainerUIView()
         view.backgroundColor = .black
@@ -109,27 +118,9 @@ struct AVPlayerLayerView: UIViewRepresentable {
         }
         pipCoordinator.attach(to: uiView.playerLayer)
     }
-}
 
-/// Hidden `MPVolumeView` bridge enabling smooth vertical-drag volume adjustments on iOS.
-@MainActor
-final class SystemVolumeBridge {
-    private let volumeView: MPVolumeView
-
-    init() {
-        let view = MPVolumeView(frame: CGRect(x: -1000, y: -1000, width: 1, height: 1))
-        view.clipsToBounds = true
-        self.volumeView = view
-    }
-
-    var currentVolume: Float {
-        AVAudioSession.sharedInstance().outputVolume
-    }
-
-    func setVolume(_ value: Float) {
-        let clamped = min(1.0, max(0.0, value))
-        if let slider = volumeView.subviews.first(where: { $0 is UISlider }) as? UISlider {
-            slider.value = clamped
-        }
+    static func dismantleUIView(_ uiView: PlayerContainerUIView, coordinator: PipCoordinator) {
+        coordinator.detach(from: uiView.playerLayer)
+        uiView.playerLayer.player = nil
     }
 }

@@ -1,6 +1,7 @@
 import AVFoundation
 import SwiftUI
 import UIKit
+import OSLog
 import AnimeHeavenCore
 
 private enum DragGestureKind {
@@ -21,12 +22,12 @@ struct PlayerView: View {
     @Environment(\.ahPalette) private var palette
     @Environment(\.scenePhase) private var scenePhase
 
-    @State private var viewModel: PlayerViewModel
+    @StateObject private var modelStorage: ViewModelStorage<PlayerViewModel>
+    private var viewModel: PlayerViewModel { modelStorage.value }
     @State private var player = AVPlayer()
     @State private var progress = PlayerProgressModel()
     @State private var pipCoordinator = PipCoordinator()
     @State private var nowPlaying = NowPlayingBridge()
-    @State private var volumeBridge = SystemVolumeBridge()
 
     @State private var isPlaying = false
     @State private var isBuffering = true
@@ -56,6 +57,12 @@ struct PlayerView: View {
     @State private var activeDragKind: DragGestureKind?
     @State private var dragStartBrightness: CGFloat = 0.5
     @State private var dragStartVolume: Float = 0.5
+    @State private var isCleanedUp = false
+    @State private var hasAudioSession = false
+    @State private var brightnessScreen: UIScreen?
+    @State private var originalBrightness: CGFloat?
+    @State private var unlockHintTask: Task<Void, Never>?
+    private static let logger = Logger(subsystem: "me.animeheaven.ios", category: "Playback")
 
     private let speedOptions: [Float] = [0.75, 1.0, 1.25, 1.5, 2.0]
 
@@ -64,8 +71,7 @@ struct PlayerView: View {
         self.container = container
         self.onDismiss = onDismiss
         _isLandscape = State(initialValue: container.settingsStore.autoLandscapePlayer)
-        _viewModel = State(initialValue: PlayerViewModel(
-            episodeKey: presentation.episodeKey,
+        _modelStorage = StateObject(wrappedValue: ViewModelStorage(PlayerViewModel(
             animeId: presentation.animeId,
             animeTitle: presentation.animeTitle,
             coverUrl: presentation.coverUrl,
@@ -76,7 +82,7 @@ struct PlayerView: View {
             proxyServer: container.proxyServer,
             networkPolicy: container.networkPolicy,
             preloader: container.preloader
-        ))
+        )))
     }
 
     var body: some View {
@@ -192,6 +198,7 @@ struct PlayerView: View {
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
         .onAppear {
+            isCleanedUp = false
             UIApplication.shared.isIdleTimerDisabled = true
             if isLandscape {
                 OrientationManager.shared.lockLandscape()
@@ -201,9 +208,17 @@ struct PlayerView: View {
         .onDisappear {
             cleanupPlayer()
         }
-        .onChange(of: viewModel.playbackURL) { _, newURL in
-            guard let newURL else { return }
-            loadIntoAVPlayer(url: newURL)
+        .task(id: presentation.episodeKey) {
+            viewModel.loadEpisode(episodeKey: presentation.episodeKey)
+        }
+        .onChange(of: viewModel.playbackURL, initial: true) { _, newURL in
+            guard !isCleanedUp else { return }
+            if let newURL {
+                loadIntoAVPlayer(url: newURL)
+            } else {
+                player.pause()
+                player.replaceCurrentItem(with: nil)
+            }
         }
         .onChange(of: isLandscape) { _, landscape in
             if landscape {
@@ -284,18 +299,24 @@ struct PlayerView: View {
                                 guard abs(value.translation.height) > abs(value.translation.width) else { return }
                                 let isLeft = value.startLocation.x < geo.size.width / 2
                                 activeDragKind = isLeft ? .brightness : .volume
-                                dragStartBrightness = UIScreen.main.brightness
-                                dragStartVolume = volumeBridge.currentVolume
+                                if brightnessScreen == nil {
+                                    brightnessScreen = UIApplication.shared.connectedScenes
+                                        .compactMap { $0 as? UIWindowScene }
+                                        .first { $0.windows.contains(where: \.isKeyWindow) }?.screen
+                                    originalBrightness = brightnessScreen?.brightness
+                                }
+                                dragStartBrightness = brightnessScreen?.brightness ?? 0.5
+                                dragStartVolume = player.volume
                             }
                             let delta = -value.translation.height / max(220, geo.size.height * 0.7)
                             switch activeDragKind {
                             case .brightness:
                                 let next = min(1.0, max(0.03, dragStartBrightness + delta))
-                                UIScreen.main.brightness = next
+                                brightnessScreen?.brightness = next
                                 dragIndicator = DragHudIndicator(kind: .brightness, percent: Int((next * 100).rounded()))
                             case .volume:
                                 let next = min(1.0, max(0.0, dragStartVolume + Float(delta)))
-                                volumeBridge.setVolume(next)
+                                player.volume = next
                                 dragIndicator = DragHudIndicator(kind: .volume, percent: Int((next * 100).rounded()))
                             case nil:
                                 break
@@ -425,7 +446,7 @@ struct PlayerView: View {
                     let step = viewModel.settingsStore.doubleTapSeekSeconds
                     seekBy(deltaMs: -Int64(step) * 1000, label: "-\(step)s")
                 } label: {
-                    Image(systemName: "gobackward.10")
+                    Image(systemName: "gobackward")
                         .font(.system(size: 30, weight: .semibold))
                         .foregroundStyle(.white)
                         .padding(12)
@@ -444,7 +465,7 @@ struct PlayerView: View {
                     let step = viewModel.settingsStore.doubleTapSeekSeconds
                     seekBy(deltaMs: Int64(step) * 1000, label: "+\(step)s")
                 } label: {
-                    Image(systemName: "goforward.10")
+                    Image(systemName: "goforward")
                         .font(.system(size: 30, weight: .semibold))
                         .foregroundStyle(.white)
                         .padding(12)
@@ -588,23 +609,13 @@ struct PlayerView: View {
         activeSkipSegment = nil
         handledSkipTypes.removeAll()
 
-        let asset: AVURLAsset
-        if viewModel.usesProxyStream {
-            asset = AVURLAsset(url: url)
-        } else {
-            let headers = [
-                "User-Agent": AnimeHeavenClient.userAgent,
-                "Referer": "\(AnimeHeavenClient.baseURL)/"
-            ]
-            asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": headers])
-        }
-
-        let item = AVPlayerItem(asset: asset)
+        let item = AVPlayerItem(url: url)
         item.preferredForwardBufferDuration = 25
 
         statusObservation?.invalidate()
         statusObservation = item.observe(\.status, options: [.new]) { observedItem, _ in
             Task { @MainActor in
+                guard !isCleanedUp, player.currentItem === observedItem else { return }
                 switch observedItem.status {
                 case .readyToPlay:
                     isBuffering = false
@@ -615,6 +626,8 @@ struct PlayerView: View {
                         let target = CMTime(value: viewModel.initialResumePositionMs, timescale: 1000)
                         await player.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero)
                     }
+                    guard !isCleanedUp, player.currentItem === observedItem else { return }
+                    startAudioSession()
                     player.playImmediately(atRate: playbackRate)
                     viewModel.onPlaybackStarted(durationMs: durMs)
                 case .failed:
@@ -633,8 +646,10 @@ struct PlayerView: View {
             forName: .AVPlayerItemDidPlayToEndTime,
             object: item,
             queue: .main
-        ) { _ in
+        ) { notification in
+            guard let ended = notification.object as? AVPlayerItem else { return }
             Task { @MainActor in
+                guard !isCleanedUp, player.currentItem === ended else { return }
                 let finalDur = progress.durationMs
                 viewModel.persistProgress(positionMs: finalDur, durationMs: finalDur, forceWatched: true)
                 if viewModel.settingsStore.autoPlayNext && viewModel.stream?.nextEpisodeKey != nil && !isInPipMode {
@@ -651,13 +666,15 @@ struct PlayerView: View {
     }
 
     private func configurePlayerObservers() {
+        guard timeObserverToken == nil else { return }
         pipCoordinator.onPipStateChanged = { active in
             isInPipMode = active
             if active { hudVisible = false }
         }
 
         nowPlaying.bindRemoteCommands(
-            onPlay: { player.playImmediately(atRate: playbackRate) },
+            skipSeconds: viewModel.settingsStore.doubleTapSeekSeconds,
+            onPlay: { if !isCleanedUp { player.playImmediately(atRate: playbackRate) } },
             onPause: { player.pause(); persistCurrentProgress() },
             onToggle: { togglePlayPause() },
             onSeekDelta: { deltaSec in
@@ -668,6 +685,7 @@ struct PlayerView: View {
 
         timeControlObservation = player.observe(\.timeControlStatus, options: [.new]) { p, _ in
             Task { @MainActor in
+                guard !isCleanedUp else { return }
                 switch p.timeControlStatus {
                 case .playing:
                     isPlaying = true
@@ -686,6 +704,7 @@ struct PlayerView: View {
         let interval = CMTime(seconds: 0.5, preferredTimescale: 600)
         timeObserverToken = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { cmTime in
             Task { @MainActor in
+                guard !isCleanedUp, player.currentItem != nil else { return }
                 let posSec = cmTime.seconds
                 let posMs = posSec.isFinite && posSec >= 0 ? Int64(posSec * 1000) : 0
                 progress.positionMs = posMs
@@ -719,7 +738,7 @@ struct PlayerView: View {
                     episodeLabel: viewModel.stream?.episodeLabel ?? "",
                     positionSec: Double(progress.positionMs) / 1000.0,
                     durationSec: Double(progress.durationMs) / 1000.0,
-                    isPlaying: isPlaying
+                    playbackRate: player.rate
                 )
 
                 let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
@@ -732,6 +751,7 @@ struct PlayerView: View {
     }
 
     private func togglePlayPause() {
+        guard !isCleanedUp, player.currentItem?.status == .readyToPlay else { return }
         if player.timeControlStatus == .playing {
             player.pause()
             persistCurrentProgress()
@@ -750,11 +770,20 @@ struct PlayerView: View {
     }
 
     private func seekTo(ms: Int64) {
+        guard !isCleanedUp, player.currentItem != nil else { return }
         let clamped = max(0, ms)
         progress.positionMs = clamped
         let cm = CMTime(value: clamped, timescale: 1000)
         player.seek(to: cm, toleranceBefore: .zero, toleranceAfter: .zero)
         viewModel.onPlayheadTick(positionMs: clamped, durationMs: progress.durationMs)
+        nowPlaying.updateMetadata(
+            title: viewModel.animeTitle,
+            episodeLabel: viewModel.stream?.episodeLabel ?? "",
+            positionSec: Double(clamped) / 1000,
+            durationSec: Double(progress.durationMs) / 1000,
+            playbackRate: player.rate,
+            force: true
+        )
         persistCurrentProgress()
     }
 
@@ -801,8 +830,9 @@ struct PlayerView: View {
 
     private func flashUnlockHint() {
         showUnlockHint = true
-        Task {
-            try? await Task.sleep(for: .seconds(2.5))
+        unlockHintTask?.cancel()
+        unlockHintTask = Task {
+            do { try await Task.sleep(for: .seconds(2.5)) } catch { return }
             showUnlockHint = false
         }
     }
@@ -815,12 +845,15 @@ struct PlayerView: View {
     }
 
     private func exitPlayer() {
-        persistCurrentProgress()
         cleanupPlayer()
         onDismiss()
     }
 
     private func cleanupPlayer() {
+        guard !isCleanedUp else { return }
+        isCleanedUp = true
+        unlockHintTask?.cancel()
+        unlockHintTask = nil
         persistCurrentProgress()
         if let token = timeObserverToken {
             player.removeTimeObserver(token)
@@ -837,9 +870,36 @@ struct PlayerView: View {
         player.pause()
         player.replaceCurrentItem(with: nil)
         pipCoordinator.stopPip()
+        pipCoordinator.onPipStateChanged = nil
         nowPlaying.clearRemoteCommands()
         viewModel.shutdown()
+        if let originalBrightness { brightnessScreen?.brightness = originalBrightness }
+        brightnessScreen = nil
+        originalBrightness = nil
+        stopAudioSession()
         UIApplication.shared.isIdleTimerDisabled = false
         OrientationManager.shared.unlockAll()
+    }
+
+    private func startAudioSession() {
+        guard !hasAudioSession else { return }
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .moviePlayback, options: [.allowAirPlay])
+            try session.setActive(true)
+            hasAudioSession = true
+        } catch {
+            Self.logger.error("Could not activate playback audio: \(error.localizedDescription)")
+        }
+    }
+
+    private func stopAudioSession() {
+        guard hasAudioSession else { return }
+        hasAudioSession = false
+        do {
+            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        } catch {
+            Self.logger.error("Could not deactivate playback audio: \(error.localizedDescription)")
+        }
     }
 }

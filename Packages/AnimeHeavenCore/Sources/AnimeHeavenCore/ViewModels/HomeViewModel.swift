@@ -36,12 +36,12 @@ public final class HomeViewModel {
 
     public func startObservingLocalState() {
         guard dbObserverTask == nil else { return }
+        let db = repository.database
         dbObserverTask = Task { [weak self] in
-            guard let self else { return }
-            await self.refreshLocalRows()
-            let stream = await self.repository.database.observeChanges()
+            let stream = await db.observeChanges()
+            await self?.refreshLocalRows()
             for await event in stream {
-                if Task.isCancelled { break }
+                guard !Task.isCancelled, let self else { break }
                 if event == .bookmarks || event == .watchProgress {
                     await self.refreshLocalRows()
                 }
@@ -52,6 +52,10 @@ public final class HomeViewModel {
     public func stopObservingLocalState() {
         dbObserverTask?.cancel()
         dbObserverTask = nil
+    }
+    deinit {
+        dbObserverTask?.cancel()
+        loadTask?.cancel()
     }
 
     public func loadHome(forceRefresh: Bool = false) {

@@ -33,9 +33,6 @@ struct BookmarksView: View {
                         if !viewModel.continueWatching.isEmpty {
                             VStack(alignment: .leading, spacing: 8) {
                                 HStack {
-                                    Text("Continue Watching")
-                                        .font(.title3.weight(.bold))
-                                        .foregroundStyle(palette.textPrimary)
                                     Spacer()
                                     Button("Clear History") {
                                         confirmClearHistory = true

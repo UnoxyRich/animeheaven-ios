@@ -4,7 +4,10 @@ import Foundation
 /// Task so cancelling one caller (e.g. a background preloader) never cancels the underlying fetch
 /// for another foreground screen awaiting the same key.
 public actor RequestCoalescer<Value: Sendable> {
-    private var inFlight: [String: Task<Value, Error>] = [:]
+    private struct Flight {
+        var waiters: [UUID: CheckedContinuation<Value, Error>] = [:]
+    }
+    private var inFlight: [String: Flight] = [:]
 
     public init() {}
 
@@ -12,30 +15,35 @@ public actor RequestCoalescer<Value: Sendable> {
         key: String,
         operation: @escaping @Sendable () async throws -> Value
     ) async throws -> Value {
-        let task: Task<Value, Error>
-        if let existing = inFlight[key] {
-            task = existing
-        } else {
-            let created = Task.detached(priority: .userInitiated) {
-                try await operation()
+        let waiter = UUID()
+        let value: Value = try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            return try await withCheckedThrowingContinuation { continuation in
+                let shouldStart = inFlight[key] == nil
+                inFlight[key, default: Flight()].waiters[waiter] = continuation
+                if shouldStart {
+                    Task.detached(priority: .userInitiated) { [self] in
+                        let result: Result<Value, Error>
+                        do { result = .success(try await operation()) }
+                        catch { result = .failure(error) }
+                        await finish(key: key, result: result)
+                    }
+                }
             }
-            inFlight[key] = created
-            task = created
-            Task { [weak self] in
-                _ = try? await created.value
-                await self?.removeIfSame(key: key, task: created)
-            }
-        }
-        return try await withTaskCancellationHandler {
-            try await task.value
         } onCancel: {
-            // Deliberately do NOT cancel `task`: other callers may still await it.
+            Task { await self.cancelWaiter(waiter, key: key) }
         }
+        try Task.checkCancellation()
+        return value
     }
 
-    private func removeIfSame(key: String, task: Task<Value, Error>) {
-        if inFlight[key] == task {
-            inFlight.removeValue(forKey: key)
+    private func cancelWaiter(_ waitId: UUID, key: String) {
+        inFlight[key]?.waiters.removeValue(forKey: waitId)?.resume(throwing: CancellationError())
+    }
+
+    private func finish(key: String, result: Result<Value, Error>) {
+        if let flight = inFlight.removeValue(forKey: key) {
+            for waiter in flight.waiters.values { waiter.resume(with: result) }
         }
     }
 }

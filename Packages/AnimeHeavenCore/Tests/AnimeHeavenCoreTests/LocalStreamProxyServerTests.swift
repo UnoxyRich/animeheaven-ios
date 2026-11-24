@@ -65,6 +65,20 @@ struct LocalStreamProxyServerTests {
         let (_, badResp) = try await URLSession.shared.data(from: badURL)
         let badHttp = try #require(badResp as? HTTPURLResponse)
         #expect(badHttp.statusCode == 403)
+
+        var unsupported = URLRequest(url: localURL)
+        unsupported.httpMethod = "POST"
+        let (_, postResponse) = try await URLSession.shared.data(for: unsupported)
+        let post = try #require(postResponse as? HTTPURLResponse)
+        #expect(post.statusCode == 405)
+        #expect(post.value(forHTTPHeaderField: "Allow") == "GET, HEAD")
+    }
+
+    @Test func rejectsIncompleteOrMalformedHTTP() {
+        #expect(LocalStreamProxyServer.parseHttpRequest(Data("GET / HTTP/1.1\r\n".utf8)) == nil)
+        #expect(LocalStreamProxyServer.parseHttpRequest(Data("GET / HTTP/2\r\n\r\n".utf8)) == nil)
+        let request = "GET /stream HTTP/1.1\r\nRange: bytes=0-1\r\nRange: bytes=2-3\r\n\r\n"
+        #expect(LocalStreamProxyServer.parseHttpRequest(Data(request.utf8)) == nil)
     }
 
     @Test func byteRangeResolverHandlesOpenEndedSuffixAndInvalidRanges() {

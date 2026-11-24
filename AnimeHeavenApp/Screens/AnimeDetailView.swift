@@ -2,7 +2,8 @@ import SwiftUI
 import AnimeHeavenCore
 
 struct AnimeDetailView: View {
-    @State private var viewModel: DetailViewModel
+    @StateObject private var modelStorage: ViewModelStorage<DetailViewModel>
+    private var viewModel: DetailViewModel { modelStorage.value }
     private let imageCache: ImageCacheManager
     private let onPlayEpisode: (String, String, String, String) -> Void
     private let onOpenTag: (String) -> Void
@@ -19,11 +20,11 @@ struct AnimeDetailView: View {
         onOpenTag: @escaping (String) -> Void,
         onOpenAnime: @escaping (String) -> Void
     ) {
-        _viewModel = State(initialValue: DetailViewModel(
+        _modelStorage = StateObject(wrappedValue: ViewModelStorage(DetailViewModel(
             animeId: animeId,
             repository: container.repository,
             preloader: container.preloader
-        ))
+        )))
         self.imageCache = container.imageCacheManager
         self.onPlayEpisode = onPlayEpisode
         self.onOpenTag = onOpenTag
@@ -103,7 +104,7 @@ struct AnimeDetailView: View {
                     .padding(.bottom, 28)
                 }
                 .refreshable {
-                    viewModel.load(forceRefresh: true)
+                    await viewModel.refreshAsync()
                 }
             }
         }

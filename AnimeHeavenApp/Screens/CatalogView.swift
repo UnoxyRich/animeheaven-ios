@@ -2,7 +2,8 @@ import SwiftUI
 import AnimeHeavenCore
 
 struct CatalogView: View {
-    @State var viewModel: CatalogViewModel
+    @StateObject private var modelStorage: ViewModelStorage<CatalogViewModel>
+    private var viewModel: CatalogViewModel { modelStorage.value }
     let imageCache: ImageCacheManager
     let isRootTab: Bool
     let seasonLabel: String?
@@ -14,6 +15,28 @@ struct CatalogView: View {
 
     @Environment(\.ahPalette) private var palette
     private let gridColumns = [GridItem(.adaptive(minimum: 112, maximum: 165), spacing: 12)]
+
+    init(
+        viewModel: @autoclosure @escaping @MainActor () -> CatalogViewModel,
+        imageCache: ImageCacheManager,
+        isRootTab: Bool,
+        seasonLabel: String?,
+        onOpenAnime: @escaping (String) -> Void,
+        onOpenSeasonal: @escaping () -> Void,
+        onOpenSearch: @escaping () -> Void,
+        onOpenRandom: @escaping () -> Void,
+        onOpenSettings: @escaping () -> Void
+    ) {
+        _modelStorage = StateObject(wrappedValue: ViewModelStorage(viewModel()))
+        self.imageCache = imageCache
+        self.isRootTab = isRootTab
+        self.seasonLabel = seasonLabel
+        self.onOpenAnime = onOpenAnime
+        self.onOpenSeasonal = onOpenSeasonal
+        self.onOpenSearch = onOpenSearch
+        self.onOpenRandom = onOpenRandom
+        self.onOpenSettings = onOpenSettings
+    }
 
     var body: some View {
         ZStack {

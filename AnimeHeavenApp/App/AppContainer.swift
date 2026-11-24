@@ -1,5 +1,13 @@
 import Foundation
+import SwiftUI
 import AnimeHeavenCore
+
+@MainActor
+final class ViewModelStorage<Model>: ObservableObject {
+    let value: Model
+
+    init(_ value: Model) { self.value = value }
+}
 
 /// Lazy application dependency container mirroring Android's `AppContainer` architecture.
 /// Heavy I/O subsystems initialize lazily off the main thread so cold start finishes in <5 ms.
@@ -65,6 +73,13 @@ public final class AppContainer {
         let imgDir = cachesDir.appendingPathComponent("image_cache", isDirectory: true)
         return ImageCacheManager(diskDirectory: imgDir)
     }()
+    lazy var homeViewModel = HomeViewModel(repository: repository, settingsStore: settingsStore, preloader: preloader)
+    lazy var newViewModel = CatalogViewModel(kind: .newReleases, repository: repository,
+        settingsStore: settingsStore, preloader: preloader)
+    lazy var popularViewModel = CatalogViewModel(kind: .popular, repository: repository,
+        settingsStore: settingsStore, preloader: preloader)
+    lazy var bookmarksViewModel = BookmarksViewModel(repository: repository)
+    private var hasStartedWarmup = false
 
     private var _preloader: AnimePreloader?
     public var preloader: AnimePreloader {
@@ -99,6 +114,8 @@ public final class AppContainer {
     }
 
     public func warmUpOnStartup() {
+        guard !hasStartedWarmup else { return }
+        hasStartedWarmup = true
         let client = self.client
         let repository = self.repository
         let preloader = self.preloader

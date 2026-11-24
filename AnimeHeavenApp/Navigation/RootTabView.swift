@@ -43,32 +43,10 @@ struct RootTabView: View {
     @State private var activePlayer: PlayerPresentation?
     @State private var isResolvingRandom = false
 
-    @State private var homeVM: HomeViewModel
-    @State private var newVM: CatalogViewModel
-    @State private var popularVM: CatalogViewModel
-    @State private var bookmarksVM: BookmarksViewModel
-
-    init(container: AppContainer) {
-        self.container = container
-        _homeVM = State(initialValue: HomeViewModel(
-            repository: container.repository,
-            settingsStore: container.settingsStore,
-            preloader: container.preloader
-        ))
-        _newVM = State(initialValue: CatalogViewModel(
-            kind: .newReleases,
-            repository: container.repository,
-            settingsStore: container.settingsStore,
-            preloader: container.preloader
-        ))
-        _popularVM = State(initialValue: CatalogViewModel(
-            kind: .popular,
-            repository: container.repository,
-            settingsStore: container.settingsStore,
-            preloader: container.preloader
-        ))
-        _bookmarksVM = State(initialValue: BookmarksViewModel(repository: container.repository))
-    }
+    private var homeVM: HomeViewModel { container.homeViewModel }
+    private var newVM: CatalogViewModel { container.newViewModel }
+    private var popularVM: CatalogViewModel { container.popularViewModel }
+    private var bookmarksVM: BookmarksViewModel { container.bookmarksViewModel }
 
     private var isShowingRootTab: Bool {
         switch selectedTab {
@@ -257,7 +235,7 @@ struct RootTabView: View {
     }
 
     private func openCurrentSeason() {
-        let path = homeVM.feed?.seasonPath ?? "2025fall.php"
+        guard let path = homeVM.feed?.seasonPath, !path.isEmpty else { return }
         let label = homeVM.feed?.seasonLabel ?? "Season"
         push(.seasonal(path: path, label: label))
     }

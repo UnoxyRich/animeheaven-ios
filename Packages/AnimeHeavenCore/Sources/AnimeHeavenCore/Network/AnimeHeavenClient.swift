@@ -28,6 +28,18 @@ private final class NoRedirectDelegate: NSObject, URLSessionTaskDelegate, @unche
     }
 }
 
+private final class SiteRedirectDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        completionHandler(request.url.map(AnimeHeavenClient.isSiteURL) == true ? request : nil)
+    }
+}
+
 public final class AnimeHeavenClient: Sendable {
     public static let baseURL = "https://animeheaven.me"
     public static let userAgent =
@@ -36,13 +48,12 @@ public final class AnimeHeavenClient: Sendable {
 
     public let session: URLSession
     private let noRedirectSession: URLSession
-    private let noRedirectDelegate: NoRedirectDelegate
+    private let siteRedirectDelegate = SiteRedirectDelegate()
 
     public init(session: URLSession? = nil) {
         let configured = session ?? Self.makeDefaultSession()
         self.session = configured
         let delegate = NoRedirectDelegate()
-        self.noRedirectDelegate = delegate
 
         let noRedirectConfig = URLSessionConfiguration.ephemeral
         noRedirectConfig.timeoutIntervalForRequest = 8
@@ -53,6 +64,18 @@ public final class AnimeHeavenClient: Sendable {
             delegate: delegate,
             delegateQueue: nil
         )
+    }
+    deinit { noRedirectSession.invalidateAndCancel() }
+
+    fileprivate static func isSiteURL(_ url: URL) -> Bool {
+        url.scheme?.lowercased() == "https" && url.host?.lowercased() == "animeheaven.me" &&
+            (url.port == nil || url.port == 443) && url.user == nil && url.password == nil
+    }
+
+    private static func isValidIdentifier(_ id: String) -> Bool {
+        !id.isEmpty && id.utf8.allSatisfy {
+            (65...90).contains($0) || (97...122).contains($0) || (48...57).contains($0) || $0 == 45 || $0 == 95
+        }
     }
 
     public static func makeDefaultSession(cacheDirectory: URL? = nil) -> URLSession {
@@ -84,17 +107,12 @@ public final class AnimeHeavenClient: Sendable {
     }
 
     public func fetchHtml(relativePath: String) async throws -> String {
-        let trimmed = relativePath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        let urlString: String
-        if trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") {
-            urlString = trimmed
-        } else {
-            urlString = "\(Self.baseURL)/\(trimmed)"
-        }
-        guard let url = URL(string: urlString) else {
-            throw AnimeHeavenClientError.invalidURL(urlString)
+        guard let url = URL(string: relativePath, relativeTo: URL(string: "\(Self.baseURL)/"))?.absoluteURL,
+              Self.isSiteURL(url) else {
+            throw AnimeHeavenClientError.invalidURL(relativePath)
         }
         var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
         request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
         request.setValue(
             "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -127,12 +145,14 @@ public final class AnimeHeavenClient: Sendable {
         if let (_, resp) = try? await noRedirectSession.data(for: request),
            let http = resp as? HTTPURLResponse,
            let location = http.value(forHTTPHeaderField: "Location"),
-           let fromLocation = AnimeHeavenParser.extractAnimeId(location),
+           let destination = URL(string: location, relativeTo: url)?.absoluteURL, Self.isSiteURL(destination),
+           let fromLocation = AnimeHeavenParser.extractAnimeId(destination.absoluteString),
            !fromLocation.isEmpty {
             return fromLocation
         }
 
-        let (_, resp) = try await session.data(for: request)
+        try Task.checkCancellation()
+        let (_, resp) = try await session.data(for: request, delegate: siteRedirectDelegate)
         if let finalURL = resp.url?.absoluteString,
            let fromFinal = AnimeHeavenParser.extractAnimeId(finalURL),
            !fromFinal.isEmpty {
@@ -142,6 +162,10 @@ public final class AnimeHeavenClient: Sendable {
     }
 
     public func fetchGateHtml(episodeKey: String, animeId: String?) async throws -> String {
+        guard Self.isValidIdentifier(episodeKey),
+              animeId.map({ $0.isEmpty || Self.isValidIdentifier($0) }) ?? true else {
+            throw AnimeHeavenClientError.invalidURL("Invalid anime or episode identifier")
+        }
         guard let url = URL(string: "\(Self.baseURL)/gate.php") else {
             throw AnimeHeavenClientError.invalidURL("\(Self.baseURL)/gate.php")
         }
@@ -177,7 +201,7 @@ public final class AnimeHeavenClient: Sendable {
     }
 
     private func executeForString(_ request: URLRequest) async throws -> String {
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await session.data(for: request, delegate: siteRedirectDelegate)
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             throw AnimeHeavenClientError.httpError(
                 statusCode: http.statusCode,

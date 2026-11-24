@@ -40,7 +40,7 @@ swift run AnimeHeavenCoreSelfTest
 cd Packages/AnimeHeavenCore && swift test
 
 # Build iOS Simulator target from CLI
-cd /Users/unoxyrich/Documents/GitHub/animeheaven-ios
+cd animeheaven-ios
 xcodebuild build \
   -project AnimeHeaven.xcodeproj \
   -scheme AnimeHeaven \

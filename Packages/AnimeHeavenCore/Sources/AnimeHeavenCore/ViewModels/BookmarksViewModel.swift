@@ -15,15 +15,16 @@ public final class BookmarksViewModel {
     public init(repository: AnimeHeavenRepository) {
         self.repository = repository
     }
+    deinit { observerTask?.cancel() }
 
     public func startObserving() {
         guard observerTask == nil else { return }
+        let db = repository.database
         observerTask = Task { [weak self] in
-            guard let self else { return }
-            await self.reload()
-            let stream = await self.repository.database.observeChanges()
+            let stream = await db.observeChanges()
+            await self?.reload()
             for await event in stream {
-                if Task.isCancelled { break }
+                guard !Task.isCancelled, let self else { break }
                 if event == .bookmarks || event == .watchProgress {
                     await self.reload()
                 }

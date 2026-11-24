@@ -88,8 +88,8 @@ public enum SkipTimesParser {
                   endSec > startSec + 3.0 else {
                 continue
             }
-            let startMs = Int64((startSec * 1000.0).rounded())
-            let endMs = Int64((endSec * 1000.0).rounded())
+            guard let startMs = Int64(exactly: (startSec * 1000.0).rounded()),
+                  let endMs = Int64(exactly: (endSec * 1000.0).rounded()) else { continue }
 
             switch skipType {
             case "op":
@@ -172,16 +172,18 @@ public actor SkipTimesClient {
         var request = URLRequest(url: url)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
-        let rawJson: String? = await {
-            guard let (data, response) = try? await session.data(for: request),
-                  let http = response as? HTTPURLResponse,
-                  (200..<300).contains(http.statusCode) else {
-                return nil
-            }
-            return String(data: data, encoding: .utf8)
-        }()
-
-        let payload = rawJson ?? #"{"found":false,"results":[]}"#
+        guard let (data, response) = try? await session.data(for: request),
+              !Task.isCancelled, let http = response as? HTTPURLResponse else { return EpisodeSkipTimes() }
+        let payload: String
+        if http.statusCode == 404 {
+            payload = #"{"found":false,"results":[]}"#
+        } else if http.statusCode == 200,
+                  let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                  json["found"] is Bool, let body = String(data: data, encoding: .utf8) {
+            payload = body
+        } else {
+            return EpisodeSkipTimes()
+        }
         let parsed = SkipTimesParser.parseAniSkipResponse(payload)
         skipCache.set(cacheKey, value: parsed)
         if let db = database {
@@ -200,7 +202,8 @@ public actor SkipTimesClient {
             return mem > 0 ? mem : nil
         }
         if let existing = inFlightMalLookups[normalized] {
-            return await existing.value
+            let result = await existing.value
+            return result.flatMap { $0 > 0 ? $0 : nil }
         }
 
         let task = Task<Int?, Never> {
@@ -209,8 +212,7 @@ public actor SkipTimesClient {
             if let db = database,
                let record = await db.getWebCache(cacheKey: dbKey),
                now - record.fetchedAt < Self.anilistTTLMs {
-                let id = Int(record.payload) ?? -1
-                return id > 0 ? id : nil
+                if let id = Int(record.payload), id == -1 || id > 0 { return id }
             }
 
             guard let url = URL(string: "https://graphql.anilist.co") else { return nil }
@@ -228,30 +230,36 @@ public actor SkipTimesClient {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.setValue("application/json", forHTTPHeaderField: "Accept")
 
-            let malId: Int? = await {
-                guard let (data, response) = try? await session.data(for: request),
-                      let http = response as? HTTPURLResponse,
-                      (200..<300).contains(http.statusCode),
-                      let text = String(data: data, encoding: .utf8) else {
-                    return nil
-                }
-                return SkipTimesParser.parseMalIdFromAniList(text)
-            }()
-
-            let storedVal = malId ?? -1
+            guard let (data, response) = try? await session.data(for: request),
+                  let http = response as? HTTPURLResponse,
+                  let storedVal = Self.cacheableMalId(status: http.statusCode, data: data) else { return nil }
             if let db = database {
                 await db.upsertWebCache(
                     WebCacheRecord(cacheKey: dbKey, payload: "\(storedVal)", fetchedAt: now)
                 )
             }
-            return malId
+            return storedVal
         }
 
         inFlightMalLookups[normalized] = task
         let result = await task.value
         inFlightMalLookups.removeValue(forKey: normalized)
-        malIdCache.set(normalized, value: result ?? -1)
-        return result
+        if let result {
+            malIdCache.set(normalized, value: result)
+            return result > 0 ? result : nil
+        }
+        return nil
+    }
+
+    static func cacheableMalId(status: Int, data: Data) -> Int? {
+        if status == 404 { return -1 }
+        guard status == 200,
+              let envelope = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              envelope["errors"] == nil,
+              let values = envelope["data"] as? [String: Any],
+              let media = values["Media"] as? [String: Any] else { return nil }
+        if let id = media["idMal"] as? Int, id > 0 { return id }
+        return media["idMal"] is NSNull ? -1 : nil
     }
 
     private func normalizeTitle(_ raw: String) -> String {

@@ -8,20 +8,36 @@ import Network
 public actor LocalStreamProxyServer {
     private let booster: StreamingChunkBooster
     private let authToken: String
+    private let upstreamSession: URLSession
     private let queue = DispatchQueue(label: "me.animeheaven.ios.streamproxy", qos: .userInitiated)
     private var listener: NWListener?
+    private var startTask: Task<UInt16, Error>?
     private var boundPort: UInt16 = 0
     private var sessions: [String: StreamSessionDescriptor] = [:]
 
     public init(booster: StreamingChunkBooster) {
         self.booster = booster
         self.authToken = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 12
+        config.timeoutIntervalForResource = 600
+        config.httpShouldSetCookies = false
+        self.upstreamSession = URLSession(configuration: config)
+    }
+
+    deinit {
+        startTask?.cancel()
+        listener?.cancel()
+        upstreamSession.invalidateAndCancel()
     }
 
     public func ensureStarted() async throws -> UInt16 {
         if let listener, boundPort > 0, listener.state == .ready {
             return boundPort
         }
+        if let startTask { return try await startTask.value }
+        listener?.cancel()
+        boundPort = 0
 
         let params = NWParameters.tcp
         params.requiredLocalEndpoint = NWEndpoint.hostPort(
@@ -34,18 +50,42 @@ public actor LocalStreamProxyServer {
 
         newListener.newConnectionHandler = { [weak self] connection in
             Task.detached(priority: .userInitiated) {
-                await self?.handleConnection(connection)
+                if let self { await self.handleConnection(connection) } else { connection.cancel() }
             }
         }
 
-        let port: UInt16 = try await withCheckedThrowingContinuation { continuation in
+        let queue = self.queue
+        let task = Task { try await Self.start(newListener, queue: queue) }
+        startTask = task
+        do {
+            let port = try await task.value
+            guard listener === newListener else { throw CancellationError() }
+            boundPort = port
+            startTask = nil
+            return port
+        } catch {
+            if listener === newListener {
+                newListener.cancel()
+                listener = nil
+                startTask = nil
+            }
+            throw error
+        }
+    }
+
+    private static func start(_ newListener: NWListener, queue: DispatchQueue) async throws -> UInt16 {
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
             let resumed = LockedBool()
-            newListener.stateUpdateHandler = { state in
+            newListener.stateUpdateHandler = { [weak newListener] state in
                 switch state {
                 case .ready:
                     if resumed.trySetTrue() {
-                        let actualPort = newListener.port?.rawValue ?? 0
-                        continuation.resume(returning: actualPort)
+                        if let port = newListener?.port?.rawValue, port > 0 {
+                            continuation.resume(returning: port)
+                        } else {
+                            continuation.resume(throwing: URLError(.cannotConnectToHost))
+                        }
                     }
                 case .failed(let error):
                     if resumed.trySetTrue() {
@@ -60,14 +100,16 @@ public actor LocalStreamProxyServer {
                 }
             }
             newListener.start(queue: queue)
+            }
+        } onCancel: {
+            newListener.cancel()
         }
-
-        self.boundPort = port
-        return port
     }
 
     public func registerSession(_ session: StreamSessionDescriptor) async throws -> URL {
         let port = try await ensureStarted()
+        try Task.checkCancellation()
+        guard listener != nil else { throw CancellationError() }
         sessions[session.sessionId] = session
         guard let url = URL(string: "http://127.0.0.1:\(port)/stream/\(authToken)/\(session.sessionId).mp4") else {
             throw AnimeHeavenClientError.invalidURL("localhost proxy URL")
@@ -80,6 +122,8 @@ public actor LocalStreamProxyServer {
     }
 
     public func stop() {
+        startTask?.cancel()
+        startTask = nil
         listener?.cancel()
         listener = nil
         boundPort = 0
@@ -94,9 +138,17 @@ public actor LocalStreamProxyServer {
         connection.start(queue: queue)
         defer { connection.cancel() }
 
-        guard let requestData = await receiveHeaderBlock(from: connection),
-              let parsed = Self.parseHttpRequest(requestData) else {
+        let headerResult = await receiveHeaderBlock(from: connection)
+        if case .tooLarge = headerResult {
+            await sendRaw("HTTP/1.1 431 Request Header Fields Too Large\r\nContent-Length: 0\r\nConnection: close\r\n\r\n", on: connection)
+            return
+        }
+        guard case let .complete(requestData) = headerResult, let parsed = Self.parseHttpRequest(requestData) else {
             await sendRaw("HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n", on: connection)
+            return
+        }
+        guard parsed.method == "GET" || parsed.method == "HEAD" else {
+            await sendRaw("HTTP/1.1 405 Method Not Allowed\r\nAllow: GET, HEAD\r\nContent-Length: 0\r\nConnection: close\r\n\r\n", on: connection)
             return
         }
 
@@ -108,8 +160,12 @@ public actor LocalStreamProxyServer {
 
         let startDrop = parsed.path.dropFirst(expectedPrefix.count)
         let sessionId = String(startDrop.dropLast(4))
-        guard let session = lookupSession(sessionId), session.totalLength > 0 else {
+        guard let session = lookupSession(sessionId) else {
             await sendRaw("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n", on: connection)
+            return
+        }
+        if session.totalLength <= 0 {
+            await forwardToMirror(session: session, request: parsed, on: connection)
             return
         }
 
@@ -155,28 +211,97 @@ public actor LocalStreamProxyServer {
         }
     }
 
-    private func receiveHeaderBlock(from connection: NWConnection) async -> Data? {
-        var buffer = Data()
-        let delimiter = Data("\r\n\r\n".utf8)
-        while buffer.count < 16 * 1024 {
-            let chunk: Data? = await withCheckedContinuation { cont in
-                connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) { data, _, isComplete, error in
-                    if let data, !data.isEmpty {
-                        cont.resume(returning: data)
-                    } else if isComplete || error != nil {
-                        cont.resume(returning: nil)
-                    } else {
-                        cont.resume(returning: nil)
-                    }
+    /// Mirrors without verified range metadata still need a Referer. Stream them directly,
+    /// without writing unverified bytes to the shared episode cache.
+    private func forwardToMirror(
+        session: StreamSessionDescriptor, request: ParsedHttpRequest, on connection: NWConnection
+    ) async {
+        if let range = request.rangeHeader, !range.lowercased().hasPrefix("bytes=") || range.contains(",") {
+            await sendRaw("HTTP/1.1 416 Range Not Satisfiable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n", on: connection)
+            return
+        }
+        guard let mirror = session.mirrors.first, let url = URL(string: mirror),
+              url.scheme?.lowercased() == "https", url.host != nil else { return }
+        var upstream = URLRequest(url: url)
+        upstream.httpMethod = request.method
+        upstream.setValue(request.rangeHeader, forHTTPHeaderField: "Range")
+        upstream.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
+        upstream.setValue(AnimeHeavenClient.userAgent, forHTTPHeaderField: "User-Agent")
+        upstream.setValue("\(AnimeHeavenClient.baseURL)/", forHTTPHeaderField: "Referer")
+
+        var headersSent = false
+        do {
+            let (bytes, response) = try await upstreamSession.bytes(for: upstream)
+            defer { bytes.task.cancel() }
+            guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+            let status: String
+            switch http.statusCode {
+            case 200: status = "200 OK"
+            case 206: status = "206 Partial Content"
+            case 416: status = "416 Range Not Satisfiable"
+            default: throw URLError(.badServerResponse)
+            }
+            let type = (http.mimeType ?? "").lowercased()
+            let encoding = http.value(forHTTPHeaderField: "Content-Encoding")?.lowercased()
+            guard encoding == nil || encoding == "identity",
+                  http.statusCode == 416 || (!type.hasPrefix("text/") && !type.contains("html") && !type.contains("json")) else {
+                throw URLError(.badServerResponse)
+            }
+            var header = "HTTP/1.1 \(status)\r\nContent-Type: video/mp4\r\nConnection: close\r\n"
+            for field in ["Content-Length", "Content-Range", "Accept-Ranges"] {
+                if let value = http.value(forHTTPHeaderField: field), !value.contains("\r"), !value.contains("\n") {
+                    header += "\(field): \(value)\r\n"
                 }
             }
-            guard let chunk else { break }
-            buffer.append(chunk)
-            if buffer.range(of: delimiter) != nil {
-                return buffer
+            headersSent = true
+            guard await sendData(Data((header + "\r\n").utf8), on: connection), request.method != "HEAD" else { return }
+            let batchSize = 32 * 1024
+            var buffer = Data()
+            buffer.reserveCapacity(batchSize)
+            for try await byte in bytes {
+                buffer.append(byte)
+                if buffer.count == batchSize {
+                    guard await sendData(buffer, on: connection) else { return }
+                    buffer.removeAll(keepingCapacity: true)
+                }
+            }
+            if !buffer.isEmpty { _ = await sendData(buffer, on: connection) }
+        } catch {
+            if !headersSent {
+                await sendRaw("HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n", on: connection)
             }
         }
-        return buffer.isEmpty ? nil : buffer
+    }
+
+    private static let maxHeaderBytes = 16 * 1024
+    private enum HeaderRead { case complete(Data), incomplete, tooLarge }
+
+    private func receiveHeaderBlock(from connection: NWConnection) async -> HeaderRead {
+        let timeout = Self.startTimeout(on: connection)
+        defer { timeout.cancel() }
+        return await withTaskCancellationHandler {
+            await readHeader(from: connection)
+        } onCancel: {
+            connection.cancel()
+        }
+    }
+
+    private func readHeader(from connection: NWConnection) async -> HeaderRead {
+        var buffer = Data()
+        let delimiter = Data("\r\n\r\n".utf8)
+        while buffer.count < Self.maxHeaderBytes {
+            let chunk: Data? = await withCheckedContinuation { cont in
+                connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) { data, _, _, _ in
+                    cont.resume(returning: data.flatMap { $0.isEmpty ? nil : $0 })
+                }
+            }
+            guard let chunk else { return .incomplete }
+            buffer.append(chunk)
+            if let end = buffer.range(of: delimiter)?.upperBound {
+                return end <= Self.maxHeaderBytes ? .complete(Data(buffer.prefix(end))) : .tooLarge
+            }
+        }
+        return .tooLarge
     }
 
     private func sendRaw(_ text: String, on connection: NWConnection) async {
@@ -184,10 +309,23 @@ public actor LocalStreamProxyServer {
     }
 
     private func sendData(_ data: Data, on connection: NWConnection) async -> Bool {
-        await withCheckedContinuation { cont in
-            connection.send(content: data, completion: .contentProcessed { error in
-                cont.resume(returning: error == nil)
-            })
+        let timeout = Self.startTimeout(on: connection)
+        defer { timeout.cancel() }
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { cont in
+                connection.send(content: data, completion: .contentProcessed { error in
+                    cont.resume(returning: error == nil)
+                })
+            }
+        } onCancel: {
+            connection.cancel()
+        }
+    }
+
+    private static func startTimeout(on connection: NWConnection) -> Task<Void, Never> {
+        Task.detached {
+            do { try await Task.sleep(for: .seconds(10)) } catch { return }
+            connection.cancel()
         }
     }
 
@@ -198,23 +336,25 @@ public actor LocalStreamProxyServer {
     }
 
     internal static func parseHttpRequest(_ data: Data) -> ParsedHttpRequest? {
-        guard let text = String(data: data, encoding: .utf8) else { return nil }
+        guard data.count <= maxHeaderBytes, let text = String(data: data, encoding: .utf8),
+              text.hasSuffix("\r\n\r\n") else { return nil }
         let lines = text.components(separatedBy: "\r\n")
         guard let firstLine = lines.first else { return nil }
-        let parts = firstLine.split(separator: " ")
-        guard parts.count >= 2 else { return nil }
-        let method = String(parts[0]).uppercased()
+        let parts = firstLine.split(separator: " ", omittingEmptySubsequences: false)
+        guard parts.count == 3, !parts[0].isEmpty, parts[1].hasPrefix("/"),
+              parts[2] == "HTTP/1.1" || parts[2] == "HTTP/1.0" else { return nil }
+        let method = String(parts[0])
         let rawTarget = String(parts[1])
         let path = rawTarget.split(separator: "?").first.map(String.init) ?? rawTarget
 
         var rangeHeader: String?
         for line in lines.dropFirst() {
             if line.isEmpty { break }
-            if let colon = line.firstIndex(of: ":") {
-                let name = line[..<colon].trimmingCharacters(in: .whitespaces).lowercased()
-                if name == "range" {
-                    rangeHeader = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
-                }
+            guard let colon = line.firstIndex(of: ":"), colon != line.startIndex else { return nil }
+            let name = line[..<colon].lowercased()
+            if name == "range" {
+                guard rangeHeader == nil else { return nil }
+                rangeHeader = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
             }
         }
         return ParsedHttpRequest(method: method, path: path, rangeHeader: rangeHeader)
@@ -225,10 +365,9 @@ public actor LocalStreamProxyServer {
         totalLength: Int64
     ) -> (start: Int64, end: Int64, isPartial: Bool)? {
         guard totalLength > 0 else { return nil }
-        guard let rangeHeader, rangeHeader.lowercased().hasPrefix("bytes=") else {
-            return (0, totalLength - 1, false)
-        }
-        let spec = String(rangeHeader.dropFirst(6)).split(separator: ",").first.map(String.init) ?? ""
+        guard let rangeHeader else { return (0, totalLength - 1, false) }
+        guard rangeHeader.lowercased().hasPrefix("bytes="), !rangeHeader.contains(",") else { return nil }
+        let spec = String(rangeHeader.dropFirst(6))
         let bounds = spec.split(separator: "-", omittingEmptySubsequences: false)
         guard bounds.count == 2 else { return nil }
         let startStr = bounds[0].trimmingCharacters(in: .whitespaces)

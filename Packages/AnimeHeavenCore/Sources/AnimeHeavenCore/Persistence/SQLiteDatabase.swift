@@ -41,8 +41,13 @@ public actor SQLiteDatabase {
             if let handle { sqlite3_close(handle) }
             throw SQLiteError.openFailed(msg)
         }
-        self.db = handle
-        try Self.configureAndMigrate(db: handle, isInMemory: path == ":memory:")
+        do {
+            try Self.configureAndMigrate(db: handle, isInMemory: path == ":memory:")
+            self.db = handle
+        } catch {
+            sqlite3_close(handle)
+            throw error
+        }
     }
 
     deinit {
@@ -72,6 +77,7 @@ public actor SQLiteDatabase {
     }
 
     private static func configureAndMigrate(db: OpaquePointer, isInMemory: Bool) throws {
+        try execRaw(db, "PRAGMA busy_timeout = 5000;")
         if !isInMemory {
             try execRaw(db, "PRAGMA journal_mode = WAL;")
             try execRaw(db, "PRAGMA synchronous = NORMAL;")
@@ -79,7 +85,17 @@ public actor SQLiteDatabase {
         try execRaw(db, "PRAGMA temp_store = MEMORY;")
         try execRaw(db, "PRAGMA cache_size = -4000;")
 
+        var versionStatement: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "PRAGMA user_version;", -1, &versionStatement, nil) == SQLITE_OK,
+              let versionStatement else { throw SQLiteError.prepareFailed("user_version") }
+        let status = sqlite3_step(versionStatement)
+        let version = sqlite3_column_int(versionStatement, 0)
+        sqlite3_finalize(versionStatement)
+        guard status == SQLITE_ROW, version <= 1 else { throw SQLiteError.execFailed("Unsupported schema version \(version)") }
+        if version == 1 { return }
+
         try execRaw(db, """
+            BEGIN IMMEDIATE;
             CREATE TABLE IF NOT EXISTS bookmarks (
                 animeId TEXT NOT NULL PRIMARY KEY,
                 title TEXT NOT NULL,
@@ -116,6 +132,8 @@ public actor SQLiteDatabase {
             );
             CREATE INDEX IF NOT EXISTS index_web_cache_fetchedAt
                 ON web_cache (fetchedAt);
+            PRAGMA user_version = 1;
+            COMMIT;
         """)
     }
 
@@ -187,7 +205,7 @@ public actor SQLiteDatabase {
         bindText(stmt, 3, record.coverUrl)
         bindText(stmt, 4, record.lastEpisodeLabel)
         sqlite3_bind_int64(stmt, 5, record.addedAt)
-        sqlite3_step(stmt)
+        guard sqlite3_step(stmt) == SQLITE_DONE else { return }
         notify(.bookmarks)
     }
 
@@ -198,7 +216,7 @@ public actor SQLiteDatabase {
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK, let stmt else { return }
         defer { sqlite3_finalize(stmt) }
         bindText(stmt, 1, animeId)
-        sqlite3_step(stmt)
+        guard sqlite3_step(stmt) == SQLITE_DONE else { return }
         notify(.bookmarks)
     }
 
@@ -211,19 +229,18 @@ public actor SQLiteDatabase {
                    wp.positionMs, wp.durationMs, wp.isWatched, wp.nextEpisodeKey, wp.nextEpisodeLabel,
                    wp.updatedAt
             FROM watch_progress wp
-            INNER JOIN (
-                SELECT animeId, MAX(updatedAt) AS maxUpdated
-                FROM watch_progress
-                WHERE animeId != ''
-                GROUP BY animeId
-            ) latest ON wp.animeId = latest.animeId AND wp.updatedAt = latest.maxUpdated
-            ORDER BY wp.updatedAt DESC
+            WHERE wp.animeId != '' AND wp.episodeKey = (
+                SELECT latest.episodeKey FROM watch_progress latest
+                WHERE latest.animeId = wp.animeId
+                ORDER BY latest.updatedAt DESC, latest.episodeKey DESC LIMIT 1
+            )
+            ORDER BY wp.updatedAt DESC, wp.episodeKey DESC
             LIMIT ?;
         """
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK, let stmt else { return [] }
         defer { sqlite3_finalize(stmt) }
-        sqlite3_bind_int(stmt, 1, Int32(limit))
+        sqlite3_bind_int(stmt, 1, Int32(clamping: max(0, limit)))
         return readWatchProgressRows(stmt)
     }
 
@@ -277,14 +294,16 @@ public actor SQLiteDatabase {
         bindOptionalText(stmt, 9, record.nextEpisodeKey)
         bindOptionalText(stmt, 10, record.nextEpisodeLabel)
         sqlite3_bind_int64(stmt, 11, record.updatedAt)
-        sqlite3_step(stmt)
+        guard sqlite3_step(stmt) == SQLITE_DONE else { return }
         notify(.watchProgress)
     }
 
     public func clearWatchHistory() {
         guard let db else { return }
-        try? Self.execRaw(db, "DELETE FROM watch_progress;")
-        notify(.watchProgress)
+        do {
+            try Self.execRaw(db, "DELETE FROM watch_progress;")
+            notify(.watchProgress)
+        } catch { return }
     }
 
     // MARK: - Search History
@@ -311,7 +330,7 @@ public actor SQLiteDatabase {
         defer { sqlite3_finalize(stmt) }
         bindText(stmt, 1, query)
         sqlite3_bind_int64(stmt, 2, searchedAt)
-        sqlite3_step(stmt)
+        guard sqlite3_step(stmt) == SQLITE_DONE else { return }
         notify(.searchHistory)
     }
 
@@ -322,14 +341,16 @@ public actor SQLiteDatabase {
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK, let stmt else { return }
         defer { sqlite3_finalize(stmt) }
         bindText(stmt, 1, query)
-        sqlite3_step(stmt)
+        guard sqlite3_step(stmt) == SQLITE_DONE else { return }
         notify(.searchHistory)
     }
 
     public func clearSearchHistory() {
         guard let db else { return }
-        try? Self.execRaw(db, "DELETE FROM search_history;")
-        notify(.searchHistory)
+        do {
+            try Self.execRaw(db, "DELETE FROM search_history;")
+            notify(.searchHistory)
+        } catch { return }
     }
 
     // MARK: - Web Cache

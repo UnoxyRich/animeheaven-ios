@@ -16,6 +16,8 @@ targets:
     deploymentTarget: "17.0"
     sources:
       - path: AnimeHeavenApp
+        excludes:
+          - Resources/Info.plist
     dependencies:
       - package: AnimeHeavenCore
         product: AnimeHeavenCore
@@ -23,6 +25,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: me.animeheaven.ios
         PRODUCT_NAME: AnimeHeaven
+        CODE_SIGN_STYLE: Automatic
         SWIFT_VERSION: "6.0"
         TARGETED_DEVICE_FAMILY: "1,2"
         INFOPLIST_FILE: AnimeHeavenApp/Resources/Info.plist
@@ -42,11 +45,14 @@ targets:
     deploymentTarget: "17.0"
     sources:
       - path: AnimeHeavenUITests
+        excludes:
+          - Info.plist
     dependencies:
       - target: AnimeHeaven
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: me.animeheaven.ios.uitests
+        CODE_SIGN_STYLE: Automatic
         SWIFT_VERSION: "6.0"
         TEST_TARGET_NAME: AnimeHeaven
         INFOPLIST_FILE: AnimeHeavenUITests/Info.plist

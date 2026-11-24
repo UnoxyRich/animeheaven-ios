@@ -5,7 +5,7 @@ public final class LruCache<Key: Hashable & Sendable, Value: Sendable>: @uncheck
     private final class Node {
         let key: Key
         var value: Value
-        var prev: Node?
+        weak var prev: Node?
         var next: Node?
 
         init(key: Key, value: Value) {
@@ -22,6 +22,10 @@ public final class LruCache<Key: Hashable & Sendable, Value: Sendable>: @uncheck
 
     public init(maxEntries: Int) {
         self.maxEntries = max(1, maxEntries)
+    }
+
+    deinit {
+        clear()
     }
 
     public var count: Int {
@@ -64,10 +68,18 @@ public final class LruCache<Key: Hashable & Sendable, Value: Sendable>: @uncheck
 
     public func clear() {
         lock.lock()
-        defer { lock.unlock() }
-        map.removeAll()
+        var node = head
+        // Release arbitrary cached values after unlocking, including values with custom deinit.
+        var removed = [Key: Node]()
+        swap(&removed, &map)
         head = nil
         tail = nil
+        lock.unlock()
+        while let current = node {
+            node = current.next
+            current.next = nil
+            current.prev = nil
+        }
     }
 
     public func allKeys() -> [Key] {

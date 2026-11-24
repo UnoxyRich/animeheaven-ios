@@ -6,19 +6,22 @@ public struct StreamSessionDescriptor: Sendable {
     public let episodeKey: String?
     public let mirrors: [String]
     public let totalLength: Int64
+    public let preferExplicitOrder: Bool
 
     public init(
         sessionId: String,
         cacheKey: String,
         episodeKey: String?,
         mirrors: [String],
-        totalLength: Int64
+        totalLength: Int64,
+        preferExplicitOrder: Bool = false
     ) {
         self.sessionId = sessionId
         self.cacheKey = cacheKey
         self.episodeKey = episodeKey
         self.mirrors = mirrors
         self.totalLength = totalLength
+        self.preferExplicitOrder = preferExplicitOrder
     }
 }
 
@@ -43,8 +46,8 @@ public actor StreamingChunkBooster {
     private var currentPlayheadMs: Int64 = 0
     private var currentDurationMs: Int64 = 0
     private var currentOpEndMs: Int64 = 0
-    private var lastSeekAtMs: Int64 = 0
-    private var wakeupContinuation: AsyncStream<Void>.Continuation?
+    private var seekRevision: UInt64 = 0
+    private var retrySleep: Task<Void, Never>?
 
     public init(
         diskCache: DiskChunkCache,
@@ -155,23 +158,19 @@ public actor StreamingChunkBooster {
         request.setValue(AnimeHeavenClient.userAgent, forHTTPHeaderField: "User-Agent")
         request.setValue("\(AnimeHeavenClient.baseURL)/", forHTTPHeaderField: "Referer")
         request.setValue("bytes=0-0", forHTTPHeaderField: "Range")
+        request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
 
         let start = Date()
         do {
-            let (_, response) = try await probeSession.data(for: request)
+            let (bytes, response) = try await probeSession.bytes(for: request)
+            defer { bytes.task.cancel() }
             let latencyMs = max(1, Int64(Date().timeIntervalSince(start) * 1000))
             guard let http = response as? HTTPURLResponse,
-                  http.statusCode == 206 || http.statusCode == 200 else {
+                  let totalLength = Self.validatedRangeLength(http, start: 0, end: 0) else {
                 mirrorHealthTracker.recordFailure(url: urlString)
                 return nil
             }
-            let totalLength = DiskChunkCache.parseTotalLengthFromHeaders(
-                contentRange: http.value(forHTTPHeaderField: "Content-Range"),
-                contentLength: http.value(forHTTPHeaderField: "Content-Length"),
-                statusCode: http.statusCode
-            )
-            let supportsRanges = http.statusCode == 206 ||
-                (http.value(forHTTPHeaderField: "Accept-Ranges")?.lowercased().contains("bytes") == true)
+            let supportsRanges = http.statusCode == 206
 
             if totalLength > 0 && totalLength < MirrorHealthTracker.minValidVideoBytes {
                 mirrorHealthTracker.recordStubVideo(url: urlString)
@@ -188,7 +187,7 @@ public actor StreamingChunkBooster {
             probeMetaByUrl.set(urlString, value: meta)
             return meta
         } catch {
-            mirrorHealthTracker.recordFailure(url: urlString)
+            if !Task.isCancelled { mirrorHealthTracker.recordFailure(url: urlString) }
             return nil
         }
     }
@@ -207,13 +206,9 @@ public actor StreamingChunkBooster {
         currentDurationMs = estimatedDurationMs
         currentOpEndMs = opEndMs
 
-        let (stream, continuation) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
-        wakeupContinuation = continuation
-
         boosterTask = Task.detached(priority: .utility) { [weak self] in
-            await self?.runBoosterLoop(session: session, wakeupStream: stream)
+            await self?.runBoosterLoop(session: session)
         }
-        continuation.yield(())
     }
 
     public func updatePlayhead(positionMs: Int64, durationMs: Int64, opEndMs: Int64) {
@@ -222,17 +217,21 @@ public actor StreamingChunkBooster {
         if durationMs > 0 { currentDurationMs = durationMs }
         if opEndMs > 0 { currentOpEndMs = opEndMs }
         if delta > 8_000 {
-            lastSeekAtMs = Int64(Date().timeIntervalSince1970 * 1000)
-            wakeupContinuation?.yield(())
+            seekRevision &+= 1
+            retrySleep?.cancel()
         }
     }
 
     public func stopBoosting() {
         boosterTask?.cancel()
         boosterTask = nil
-        wakeupContinuation?.finish()
-        wakeupContinuation = nil
+        retrySleep?.cancel()
+        retrySleep = nil
         activeSession = nil
+    }
+
+    public func stopBoosting(sessionId: String) {
+        if activeSession?.sessionId == sessionId { stopBoosting() }
     }
 
     public func preloadVideoHead(
@@ -313,7 +312,10 @@ public actor StreamingChunkBooster {
             return await existing.value
         }
 
-        let rankedMirrors = mirrorHealthTracker.rankMirrors(session.mirrors)
+        let compatible = session.mirrors.filter { url in
+            probeMetaByUrl.get(url).map { $0.contentLength == session.totalLength } ?? true
+        }
+        let rankedMirrors = session.preferExplicitOrder ? compatible : mirrorHealthTracker.rankMirrors(compatible)
         let chunkEnd = min(session.totalLength - 1, chunkOffset + DiskChunkCache.chunkSizeBytes - 1)
         let task = Task.detached(priority: .userInitiated) { [videoSession, mirrorHealthTracker, diskCache] () -> Data? in
             for mirrorUrl in rankedMirrors {
@@ -323,21 +325,31 @@ public actor StreamingChunkBooster {
                 request.setValue(AnimeHeavenClient.userAgent, forHTTPHeaderField: "User-Agent")
                 request.setValue("\(AnimeHeavenClient.baseURL)/", forHTTPHeaderField: "Referer")
                 request.setValue("bytes=\(chunkOffset)-\(chunkEnd)", forHTTPHeaderField: "Range")
+                request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
 
                 let start = Date()
                 do {
-                    let (data, response) = try await videoSession.data(for: request)
+                    let (bytes, response) = try await videoSession.bytes(for: request)
+                    defer { bytes.task.cancel() }
                     guard let http = response as? HTTPURLResponse,
-                          http.statusCode == 206 || (http.statusCode == 200 && chunkOffset == 0),
-                          !data.isEmpty else {
+                          Self.validatedRangeLength(http, start: chunkOffset, end: chunkEnd) == session.totalLength else {
+                        mirrorHealthTracker.recordFailure(url: mirrorUrl)
+                        continue
+                    }
+                    let expected = Int(chunkEnd - chunkOffset + 1)
+                    var resultData = Data()
+                    resultData.reserveCapacity(expected)
+                    for try await byte in bytes {
+                        resultData.append(byte)
+                        if resultData.count == expected { break }
+                    }
+                    bytes.task.cancel()
+                    try Task.checkCancellation()
+                    guard resultData.count == expected else {
                         mirrorHealthTracker.recordFailure(url: mirrorUrl)
                         continue
                     }
                     let elapsedMs = max(1, Int64(Date().timeIntervalSince(start) * 1000))
-                    let slice = data.count > Int(chunkEnd - chunkOffset + 1)
-                        ? data.prefix(Int(chunkEnd - chunkOffset + 1))
-                        : data
-                    let resultData = Data(slice)
                     mirrorHealthTracker.recordThroughput(
                         url: mirrorUrl,
                         bytesTransferred: Int64(resultData.count),
@@ -367,14 +379,32 @@ public actor StreamingChunkBooster {
     public func clearAll() async {
         stopBoosting()
         cancelPreloadsExcept(nil)
+        let active = Array(inFlightChunks.values)
+        for task in active { task.cancel() }
+        for task in active { _ = await task.value }
         probeMetaByUrl.clear()
         await diskCache.clearAll()
     }
 
-    private func runBoosterLoop(
-        session: StreamSessionDescriptor,
-        wakeupStream: AsyncStream<Void>
-    ) async {
+    static func validatedRangeLength(_ response: HTTPURLResponse, start: Int64, end: Int64) -> Int64? {
+        let type = response.value(forHTTPHeaderField: "Content-Type")?.lowercased() ?? ""
+        let encoding = response.value(forHTTPHeaderField: "Content-Encoding")?.lowercased()
+        guard !type.hasPrefix("text/"), !type.contains("html"), !type.contains("json"),
+              encoding == nil || encoding == "identity" else { return nil }
+        let range = response.value(forHTTPHeaderField: "Content-Range")
+        if response.statusCode == 200, start == 0, range == nil,
+           let rawLength = response.value(forHTTPHeaderField: "Content-Length"),
+           let length = Int64(rawLength), length > end { return length }
+        guard response.statusCode == 206,
+              let range, range.lowercased().hasPrefix("bytes ") else { return nil }
+        let fields = range.dropFirst(6).split(separator: "/", omittingEmptySubsequences: false)
+        guard fields.count == 2, let total = Int64(fields[1]), total > end else { return nil }
+        let bounds = fields[0].split(separator: "-", omittingEmptySubsequences: false)
+        guard bounds.count == 2, Int64(bounds[0]) == start, Int64(bounds[1]) == end else { return nil }
+        return total
+    }
+
+    private func runBoosterLoop(session: StreamSessionDescriptor) async {
         // Ensure chunk 0 + non-faststart MP4 tail moov are warmed immediately
         if let firstChunk = await getOrFetchChunk(session: session, chunkOffset: 0),
            !DiskChunkCache.containsMoovBox(firstChunk) {
@@ -382,7 +412,9 @@ public actor StreamingChunkBooster {
             _ = await getOrFetchChunk(session: session, chunkOffset: tailOffset)
         }
 
-        while !Task.isCancelled {
+        var backoffMs = 500
+        while !Task.isCancelled && activeSession?.sessionId == session.sessionId {
+            let before = seekRevision
             let anchorOffset = computeAnchorChunkOffset(totalLength: session.totalLength)
             var candidates: [Int64] = []
             for step in 0..<Self.aheadWindowChunks {
@@ -395,32 +427,46 @@ public actor StreamingChunkBooster {
             }
 
             if candidates.isEmpty {
-                try? await Task.sleep(for: .milliseconds(900))
+                await waitForRetry(ms: 900, revision: before, sessionId: session.sessionId)
                 continue
             }
 
             // Fetch up to 2 chunks concurrently across mirrors
             let batch = Array(candidates.prefix(2))
-            await withTaskGroup(of: Void.self) { group in
+            let fetched = await withTaskGroup(of: Bool.self, returning: Bool.self) { group in
                 for offset in batch {
                     group.addTask {
-                        _ = await self.getOrFetchChunk(session: session, chunkOffset: offset)
+                        await self.getOrFetchChunk(session: session, chunkOffset: offset) != nil
                     }
                 }
+                var fetched = false
+                for await success in group { fetched = fetched || success }
+                return fetched
+            }
+            if fetched || before != seekRevision {
+                backoffMs = 500
+            } else {
+                await waitForRetry(ms: backoffMs, revision: before, sessionId: session.sessionId)
+                backoffMs = min(10_000, backoffMs * 2)
             }
         }
     }
 
+    private func waitForRetry(ms: Int, revision: UInt64, sessionId: String) async {
+        guard !Task.isCancelled, revision == seekRevision, activeSession?.sessionId == sessionId else { return }
+        let sleep = Task { try? await Task.sleep(for: .milliseconds(ms)); return () }
+        retrySleep = sleep
+        await sleep.value
+        if activeSession?.sessionId == sessionId { retrySleep = nil }
+    }
+
     private func computeAnchorChunkOffset(totalLength: Int64) -> Int64 {
-        let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
-        let recentlySeeked = (nowMs - lastSeekAtMs) < 3_500
         let est = DiskChunkCache.estimateByteOffset(
             positionMs: currentPlayheadMs,
             durationMs: currentDurationMs > 0 ? currentDurationMs : 24 * 60_000,
             totalLength: totalLength
         )
-        let aligned = DiskChunkCache.alignChunkStart(est)
-        return recentlySeeked ? aligned : max(0, aligned)
+        return DiskChunkCache.alignChunkStart(est)
     }
 }
 

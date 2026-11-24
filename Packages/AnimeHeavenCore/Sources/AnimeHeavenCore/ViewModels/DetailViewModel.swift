@@ -51,15 +51,19 @@ public final class DetailViewModel {
         guard let episodes = detail?.episodes else { return [] }
         return sortOldestFirst ? Array(episodes.reversed()) : episodes
     }
+    deinit {
+        observerTask?.cancel()
+        loadTask?.cancel()
+    }
 
     public func startObserving() {
         guard observerTask == nil else { return }
+        let db = repository.database
         observerTask = Task { [weak self] in
-            guard let self else { return }
-            await self.refreshLocalState()
-            let stream = await self.repository.database.observeChanges()
+            let stream = await db.observeChanges()
+            await self?.refreshLocalState()
             for await event in stream {
-                if Task.isCancelled { break }
+                guard !Task.isCancelled, let self else { break }
                 if event == .bookmarks || event == .watchProgress {
                     await self.refreshLocalState()
                 }
@@ -77,6 +81,11 @@ public final class DetailViewModel {
         loadTask = Task { [weak self] in
             await self?.runLoad(forceRefresh: forceRefresh)
         }
+    }
+
+    public func refreshAsync() async {
+        load(forceRefresh: true)
+        await loadTask?.value
     }
 
     public func toggleBookmark() {
