@@ -1,0 +1,322 @@
+import Foundation
+import AnimeHeavenCore
+
+private struct TestFailure: Error, CustomStringConvertible {
+    let message: String
+    var description: String { message }
+}
+
+private func check(_ condition: @autoclosure () -> Bool, _ message: String, file: StaticString = #file, line: UInt = #line) throws {
+    if !condition() {
+        throw TestFailure(message: "\(file):\(line) — \(message)")
+    }
+}
+
+private actor SelfTestGateway: SearchGateway {
+    var recent: [String] = ["frieren"]
+
+    func fastSearch(query: String) async throws -> [FastSearchItem] {
+        [FastSearchItem(animeId: "id1", title: "Match: \(query)", coverUrl: "https://example.com/1.jpg")]
+    }
+
+    func fullSearch(query: String) async throws -> ChartFeedResult {
+        recent.insert(query, at: 0)
+        return ChartFeedResult(title: "Search: \(query)", items: [AnimeCard(id: "id1", title: "Full: \(query)")])
+    }
+
+    func getRecentSearches() async -> [String] { recent }
+    func deleteRecentSearch(query: String) async { recent.removeAll { $0 == query } }
+}
+
+private final class TestStats {
+    var passed = 0
+    var failed = 0
+}
+
+@main
+struct AnimeHeavenCoreSelfTestMain {
+    static func main() async {
+        let stats = TestStats()
+
+        func run(_ name: String, _ body: () async throws -> Void) async {
+            do {
+                try await body()
+                stats.passed += 1
+                print("  PASS  \(name)")
+            } catch {
+                stats.failed += 1
+                print("  FAIL  \(name): \(error)")
+            }
+        }
+
+        print("Running AnimeHeavenCore self-test suite...")
+
+        await run("Parser: parseHome extracts banners, season, schedule, popular") {
+            let html = """
+            <!DOCTYPE html><html><body>
+            <div class='header bc1 c2'>
+              <a class='headeritem2' href='2025fall.php'><div class='headeritem ac'>Fall</div></a>
+              <a class='headeritem2' href='random.php'><div class='headeritem ac'>Random</div></a>
+            </div>
+            <div class='banner slide c2'><div id='slide'>
+              <a href='anime.php?0pqfl'><img class='bannerimg' src='image.php?g9lr9' alt='Black Clover'></a>
+            </div></div>
+            <div class='boldtext'>
+              <div class='chart bc1'>
+                <div class='chartimg'><a href='anime.php?6zcxf'><img class='coverimg' src='image.php?abc12' alt='Ace'></a></div>
+                <div class='chartep c2'>7</div>
+                <div class='chartinfo'>
+                  <div class='charttitle c'><a href='anime.php?6zcxf'>Ace of the Diamond</a></div>
+                  <div class='charttitlejp c'>Diamond no Ace</div>
+                  <div class='charttimer c2'>18 Hours</div>
+                </div>
+              </div>
+              <div class='popularbox bc1'>
+                <div class='popularbox2'><a href='anime.php?kybuw'><img class='coverimg' src='image.php?puty1' alt='Tokyo Revengers'></a></div>
+              </div>
+              <div class='chart bc1'><a href='2024summer.php'>Footer</a></div>
+            </div></body></html>
+            """
+            let feed = AnimeHeavenParser.parseHome(html: html)
+            try check(feed.banners.count == 1 && feed.banners[0].animeId == "0pqfl", "banner parse mismatch")
+            try check(feed.seasonPath == "2025fall.php" && feed.seasonLabel == "Fall", "season parse mismatch")
+            try check(feed.scheduleItems.count == 1 && feed.scheduleItems[0].episodeLabel == "7", "schedule parse mismatch")
+            try check(feed.popularItems.count == 1 && feed.popularItems[0].id == "kybuw", "popular parse mismatch")
+        }
+
+        await run("Parser: parseChartPage popular ranks + arrows") {
+            let html = """
+            <html><body><div class='boldtext'>
+              <div class='linetitle c'>Popular Today</div>
+              <div class='chart bc1'>
+                <div class='chartimg'><a href='anime.php?kybuw'><img class='coverimg' src='image.php?p1'></a></div>
+                <div class='chartep c2'>1</div>
+                <div class='chartinfo'>
+                  <div class='charttitle c'><a href='anime.php?kybuw'>Tokyo Revengers</a></div>
+                  <div class='charttitlejp c'>-</div>
+                  <div class='charttimer c2'><div class='popi'><img src='arrowu.svg'></div><div class='popi popt'>+2</div></div>
+                </div>
+              </div>
+            </div></body></html>
+            """
+            let res = AnimeHeavenParser.parseChartPage(html: html, isPopularRank: true)
+            try check(res.title == "Popular Today" && res.items.count == 1, "chart title/count mismatch")
+            try check(res.items[0].rankDirection == .up && res.items[0].rankDelta == "+2", "rank mismatch")
+            try check(res.items[0].japaneseTitle.isEmpty, "dash jp title should normalize empty")
+        }
+
+        await run("Parser: parseFastSearch + parseSimilarGrid + parseAnimeDetail + parseGatePage") {
+            let fast = AnimeHeavenParser.parseFastSearch(
+                html: "<a href='/anime.php?0pqfl'><div class='fastimg'><img src='/image.php?1'></div><div class='fastname'>Black Clover</div></a>"
+            )
+            try check(fast.count == 1 && fast[0].animeId == "0pqfl", "fast search mismatch")
+
+            let gateHtml = """
+            <html><body>
+              <div class='linetitle3'><a href='anime.php?abc12'>Frieren</a> Episode 5</div>
+              <video id='vid'>
+                <source src='https://v1.cdn.test/ep5.mp4?t=1'>
+                <source src='https://v2.cdn.test/ep5.mp4?t=2'>
+              </video>
+              <div class='linetitle2'>
+                <a href='gate.php' onclick="gate('ep6key')"><div class='boxitem'>Episode 6</div></a>
+                <a href='gate.php' onclick="gate('ep4key')"><div class='boxitem'>Episode 4</div></a>
+              </div>
+            </body></html>
+            """
+            let stream = AnimeHeavenParser.parseGatePage(episodeKey: "ep5key", html: gateHtml)
+            try check(stream.videoSources.count == 2, "sources count")
+            try check(stream.prevEpisodeKey == "ep4key" && stream.nextEpisodeKey == "ep6key", "prev/next order")
+        }
+
+        await run("MirrorHealthTracker: cooldown, EWMA throughput ranking, stub demotion") {
+            final class Clock: @unchecked Sendable { var now: Int64 = 10_000 }
+            let clock = Clock()
+            let tracker = MirrorHealthTracker(clockMs: { clock.now })
+            let dead = "https://dead.cdn/v.mp4"
+            let slow = "https://slow.cdn/v.mp4"
+            let fast = "https://fast.cdn/v.mp4"
+            let stub = "https://stub.cdn/v.mp4"
+
+            tracker.recordFailure(url: dead)
+            tracker.recordSuccess(url: slow, latencyMs: 80)
+            tracker.recordThroughput(url: slow, bytesTransferred: 256 * 1024, durationMs: 2_000)
+            tracker.recordSuccess(url: fast, latencyMs: 120)
+            tracker.recordThroughput(url: fast, bytesTransferred: 1024 * 1024, durationMs: 500)
+            tracker.recordStubVideo(url: stub)
+
+            let ranked = tracker.rankMirrors([stub, dead, slow, fast])
+            try check(ranked == [fast, slow, dead, stub], "unexpected ranking: \(ranked)")
+        }
+
+        await run("DiskChunkCache: shared episode key, headers, moov detection, initial window") {
+            let len: Int64 = 140 * 1024 * 1024
+            let k1 = DiskChunkCache.buildEpisodeCacheKey(episodeKey: "ep99", contentLength: len, fallbackUrl: "https://m1/a.mp4")
+            let k2 = DiskChunkCache.buildEpisodeCacheKey(episodeKey: "ep99", contentLength: len, fallbackUrl: "https://m2/b.mp4")
+            try check(k1 == "ep:ep99:\(len)" && k1 == k2, "shared cache key mismatch")
+            try check(DiskChunkCache.parseTotalLengthFromHeaders(contentRange: "bytes 0-0/123456", contentLength: "1", statusCode: 206) == 123_456, "range header parse")
+            try check(DiskChunkCache.containsMoovBox(Data([0, 0, 0, 24, 0x6D, 0x6F, 0x6F, 0x76, 0, 0])), "moov true")
+            try check(!DiskChunkCache.containsMoovBox(Data([0, 0, 0, 24, 0x6D, 0x64, 0x61, 0x74, 0, 0])), "moov false")
+            let chunks = DiskChunkCache.buildInitialWindowChunks(
+                totalLength: len, targetBytes: 2 * 1024 * 1024,
+                resumePositionMs: 600_000, estimatedDurationMs: 1_200_000, opEndMs: 90_000
+            )
+            try check(chunks.first == 0 && chunks.count >= 5, "initial window")
+        }
+
+        await run("LruCache: evicts least recently used entry") {
+            let cache = LruCache<String, Int>(maxEntries: 2)
+            cache.set("a", value: 1)
+            cache.set("b", value: 2)
+            _ = cache.get("a")
+            cache.set("c", value: 3)
+            try check(cache.get("a") == 1 && cache.get("b") == nil && cache.get("c") == 3, "LRU order")
+        }
+
+        await run("SQLiteDatabase: bookmarks, latestWatchProgressPerAnime, search history, web cache prune") {
+            let db = try SQLiteDatabase(path: ":memory:")
+            await db.upsertBookmark(BookmarkRecord(animeId: "a1", title: "S1", coverUrl: "u1", lastEpisodeLabel: "1", addedAt: 100))
+            await db.upsertBookmark(BookmarkRecord(animeId: "a2", title: "S2", coverUrl: "u2", lastEpisodeLabel: "2", addedAt: 200))
+            let bms = await db.getAllBookmarks()
+            try check(bms.map(\.animeId) == ["a2", "a1"], "bookmark ordering")
+
+            await db.upsertWatchProgress(WatchProgressRecord(
+                episodeKey: "ep1", animeId: "showA", animeTitle: "A", coverUrl: "c",
+                episodeLabel: "1", positionMs: 1_200_000, durationMs: 1_400_000, isWatched: true,
+                nextEpisodeKey: "ep2", nextEpisodeLabel: "Ep 2", updatedAt: 100
+            ))
+            await db.upsertWatchProgress(WatchProgressRecord(
+                episodeKey: "ep2", animeId: "showA", animeTitle: "A", coverUrl: "c",
+                episodeLabel: "2", positionMs: 300_000, durationMs: 1_400_000, isWatched: false,
+                nextEpisodeKey: "ep3", nextEpisodeLabel: "Ep 3", updatedAt: 300
+            ))
+            let latest = await db.getLatestWatchProgressPerAnime(limit: 10)
+            try check(latest.count == 1 && latest[0].episodeKey == "ep2", "latest per anime")
+
+            await db.upsertWebCache(WebCacheRecord(cacheKey: "old", payload: "1", fetchedAt: 100))
+            await db.upsertWebCache(WebCacheRecord(cacheKey: "new", payload: "2", fetchedAt: 500))
+            await db.pruneWebCacheOlderThan(cutoffMs: 250)
+            let oldVal = await db.getWebCache(cacheKey: "old")
+            let newVal = await db.getWebCache(cacheKey: "new")
+            try check(oldVal == nil && newVal != nil, "web cache pruning")
+        }
+
+        await run("RequestCoalescer: deduplicates & survives caller cancellation") {
+            let coalescer = RequestCoalescer<String>()
+            actor Counter { var count = 0; func inc() { count += 1 } }
+            let counter = Counter()
+            let t1 = Task {
+                try await coalescer.getOrFetch(key: "k") {
+                    await counter.inc()
+                    try await Task.sleep(for: .milliseconds(60))
+                    return "ok"
+                }
+            }
+            let t2 = Task {
+                try await coalescer.getOrFetch(key: "k") {
+                    await counter.inc()
+                    return "dup"
+                }
+            }
+            try await Task.sleep(for: .milliseconds(10))
+            t1.cancel()
+            let v2 = try await t2.value
+            let n = await counter.count
+            try check(v2 == "ok" && n == 1, "coalescer count=\(n) val=\(v2)")
+        }
+
+        await run("WatchProgressLogic & SkipPromptLogic & MirrorQueueState") {
+            try check(WatchProgressLogic.isEpisodeWatched(positionMs: 850_000, durationMs: 1_000_000), "85% watched")
+            try check(WatchProgressLogic.resolveResumePositionMs(positionMs: 930_000, durationMs: 1_000_000) == 0, "92% reset")
+            let ed = SkipSegment(type: .ed, startMs: 1_340_000, endMs: 1_430_000, isExact: true)
+            let action = SkipPromptLogic.resolveSkipAction(
+                segment: ed, currentPositionMs: 1_350_000, durationMs: 1_440_000,
+                fallbackSkipSeconds: 85, hasNextEpisode: true
+            )
+            try check(action.kind == .nextEpisode, "ed near end should advance episode")
+
+            let q = MirrorQueueState(sources: ["u1", "u2"]).advanceOnError().advanceOnError()
+            try check(q.exhausted, "mirror queue exhaustion")
+        }
+
+        await run("LocalStreamProxyServer: live NWListener HTTP 206 cross-chunk range + HEAD + 403 token check") {
+            let tempDir = FileManager.default.temporaryDirectory
+                .appendingPathComponent("ah-selftest-\(UUID().uuidString)", isDirectory: true)
+            defer { try? FileManager.default.removeItem(at: tempDir) }
+
+            let cache = DiskChunkCache(rootDirectory: tempDir, maxCacheBytes: 16 * 1024 * 1024)
+            let booster = StreamingChunkBooster(diskCache: cache)
+            let proxy = LocalStreamProxyServer(booster: booster)
+            defer { Task { await proxy.stop() } }
+
+            let chunkSize = Int(DiskChunkCache.chunkSizeBytes)
+            let chunk0 = Data((0..<chunkSize).map { UInt8($0 % 251) })
+            let chunk1 = Data((0..<chunkSize).map { UInt8(($0 + 77) % 251) })
+            let totalLength = Int64(chunk0.count + chunk1.count)
+            let cacheKey = "ep:test123:\(totalLength)"
+
+            await cache.writeChunk(cacheKey: cacheKey, chunkOffset: 0, data: chunk0)
+            await cache.writeChunk(cacheKey: cacheKey, chunkOffset: DiskChunkCache.chunkSizeBytes, data: chunk1)
+
+            let localURL = try await proxy.registerSession(StreamSessionDescriptor(
+                sessionId: "sess1",
+                cacheKey: cacheKey,
+                episodeKey: "test123",
+                mirrors: ["https://unused.local/v.mp4"],
+                totalLength: totalLength
+            ))
+
+            let rangeStart = chunkSize - 16
+            let rangeEnd = chunkSize + 31
+            var rangeReq = URLRequest(url: localURL)
+            rangeReq.setValue("bytes=\(rangeStart)-\(rangeEnd)", forHTTPHeaderField: "Range")
+
+            let (data, resp) = try await URLSession.shared.data(for: rangeReq)
+            let http = resp as? HTTPURLResponse
+            try check(http?.statusCode == 206, "expected 206 got \(String(describing: http?.statusCode))")
+            try check(http?.value(forHTTPHeaderField: "Content-Range") == "bytes \(rangeStart)-\(rangeEnd)/\(totalLength)", "Content-Range mismatch")
+            var expected = Data()
+            expected.append(chunk0.subdata(in: (chunkSize - 16)..<chunkSize))
+            expected.append(chunk1.subdata(in: 0..<32))
+            try check(data == expected, "cross-chunk payload mismatch")
+
+            var headReq = URLRequest(url: localURL)
+            headReq.httpMethod = "HEAD"
+            let (headData, headResp) = try await URLSession.shared.data(for: headReq)
+            try check((headResp as? HTTPURLResponse)?.statusCode == 200 && headData.isEmpty, "HEAD response mismatch")
+
+            let badURL = URL(string: "http://127.0.0.1:\(localURL.port ?? 0)/stream/wrongtoken/sess1.mp4")!
+            let (_, badResp) = try await URLSession.shared.data(from: badURL)
+            try check((badResp as? HTTPURLResponse)?.statusCode == 403, "expected 403 on bad token")
+        }
+
+        await run("SearchViewModel & SettingsStore: @MainActor @Observable flows") {
+            try await MainActor.run {
+                let suite = "selftest.settings.\(UUID().uuidString)"
+                let defaults = UserDefaults(suiteName: suite)!
+                defer { defaults.removePersistentDomain(forName: suite) }
+                let s1 = SettingsStore(defaults: defaults)
+                s1.themeId = .darkMagenta
+                s1.doubleTapSeekSeconds = 15
+                let s2 = SettingsStore(defaults: defaults)
+                try check(s2.themeId == .darkMagenta && s2.doubleTapSeekSeconds == 15, "SettingsStore persistence")
+            }
+
+            let vm = await MainActor.run { SearchViewModel(gateway: SelfTestGateway(), debounceMs: 10) }
+            await vm.loadRecentSearches()
+            await MainActor.run { vm.onQueryChanged("bleach") }
+            try await Task.sleep(for: .milliseconds(60))
+            let fastTitle = await MainActor.run { vm.fastResults.first?.title }
+            try check(fastTitle == "Match: bleach", "fast search mismatch: \(String(describing: fastTitle))")
+            await MainActor.run { vm.submitFullSearch() }
+            try await Task.sleep(for: .milliseconds(60))
+            let fullTitle = await MainActor.run { vm.fullResults.first?.title }
+            try check(fullTitle == "Full: bleach", "full search mismatch: \(String(describing: fullTitle))")
+        }
+
+        print("\nSelf-Test Summary: \(stats.passed) passed, \(stats.failed) failed")
+        if stats.failed > 0 {
+            exit(1)
+        }
+    }
+}

@@ -1,0 +1,22 @@
+# macOS / Xcode
+.DS_Store
+*.xcuserdata
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+DerivedData/
+build/
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Packages/AnimeHeavenCore/.build/
+Packages/AnimeHeavenCore/.swiftpm/
+
+# Fastlane / Signing
+*.ipa
+*.dSYM.zip
+*.dSYM
+*.mobileprovision
+*.p12
