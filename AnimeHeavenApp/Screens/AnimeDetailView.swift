@@ -76,7 +76,7 @@ struct AnimeDetailView: View {
                                                 .padding(.horizontal, 12)
                                                 .padding(.vertical, 6)
                                                 .background(palette.surfaceElevated, in: Capsule())
-                                                .overlay(Capsule().stroke(Color.white.opacity(0.16), lineWidth: 1))
+                                                .overlay(Capsule().stroke(palette.borderSubtle, lineWidth: 1))
                                         }
                                         .buttonStyle(.plain)
                                     }
@@ -136,9 +136,21 @@ struct AnimeDetailView: View {
             .overlay(
                 LinearGradient(
                     stops: [
-                        .init(color: Color.black.opacity(0.25), location: 0.0),
-                        .init(color: Color.black.opacity(0.5), location: 0.55),
-                        .init(color: palette.background, location: 1.0)
+                        .init(color: Color.black.opacity(palette.isLight ? 0.08 : 0.22), location: 0.0),
+                        .init(color: .clear, location: 0.45),
+                        .init(color: Color.black.opacity(palette.isLight ? 0.12 : 0.35), location: 1.0)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+            .mask(
+                LinearGradient(
+                    stops: [
+                        .init(color: .black, location: 0.0),
+                        .init(color: .black, location: 0.58),
+                        .init(color: .black.opacity(0.55), location: 0.80),
+                        .init(color: .clear, location: 1.0)
                     ],
                     startPoint: .top,
                     endPoint: .bottom
@@ -175,26 +187,30 @@ struct AnimeDetailView: View {
                     Text("Score \(detail.score)")
                         .font(.caption.weight(.bold))
                         .foregroundStyle(palette.positiveGreen)
+                        .lineLimit(1)
                 }
                 if !detail.year.isEmpty {
                     Text(detail.year)
                         .font(.caption)
                         .foregroundStyle(palette.textSecondary)
+                        .lineLimit(1)
                 }
                 if !detail.episodesLabel.isEmpty {
                     Text("\(detail.episodesLabel) Episodes")
                         .font(.caption)
                         .foregroundStyle(palette.textSecondary)
+                        .lineLimit(1)
                 }
                 Text("HD")
                     .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
+                    .lineLimit(1)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 2)
                     .overlay(RoundedRectangle(cornerRadius: 3).stroke(palette.textSecondary.opacity(0.6), lineWidth: 1))
             }
 
-            // Stacked Full-Width Netflix Mobile CTAs: White Play + Dark Matte My List
+            // Stacked Full-Width Netflix Mobile CTAs
             VStack(spacing: 9) {
                 if let target = viewModel.primaryAction {
                     Button {
@@ -202,10 +218,10 @@ struct AnimeDetailView: View {
                     } label: {
                         Label(target.buttonLabel, systemImage: "play.fill")
                             .font(.subheadline.weight(.heavy))
-                            .foregroundStyle(.black)
+                            .foregroundStyle(palette.isLight ? Color.white : Color.black)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
-                            .background(Color.white, in: RoundedRectangle(cornerRadius: 6))
+                            .background(palette.isLight ? palette.crimson : Color.white, in: RoundedRectangle(cornerRadius: 6))
                     }
                     .buttonStyle(.plain)
                 }
@@ -218,7 +234,7 @@ struct AnimeDetailView: View {
                         systemImage: viewModel.isBookmarked ? "checkmark" : "plus"
                     )
                     .font(.subheadline.weight(.bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(viewModel.isBookmarked ? Color.white : palette.textPrimary)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 11)
                     .background(
@@ -227,7 +243,7 @@ struct AnimeDetailView: View {
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 6)
-                            .stroke(viewModel.isBookmarked ? palette.crimson : Color.white.opacity(0.16), lineWidth: 1)
+                            .stroke(viewModel.isBookmarked ? palette.crimson : palette.borderSubtle, lineWidth: 1)
                     )
                 }
                 .buttonStyle(.plain)
@@ -262,8 +278,9 @@ struct AnimeDetailView: View {
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .background(palette.surfaceElevated, in: Capsule())
-                    .overlay(Capsule().stroke(Color.white.opacity(0.16), lineWidth: 1))
+                    .overlay(Capsule().stroke(palette.borderSubtle, lineWidth: 1))
                 }
+                .buttonStyle(.plain)
             }
             .padding(.horizontal, 16)
 
@@ -296,7 +313,7 @@ struct AnimeDetailView: View {
                             if frac > 0.02 {
                                 GeometryReader { geo in
                                     ZStack(alignment: .leading) {
-                                        Capsule().fill(Color.white.opacity(0.2))
+                                        Capsule().fill(palette.textPrimary.opacity(0.14))
                                         Capsule()
                                             .fill(isWatched ? palette.positiveGreen : palette.crimson)
                                             .frame(width: geo.size.width * frac)
@@ -307,13 +324,14 @@ struct AnimeDetailView: View {
                         }
                         .padding(.horizontal, 8)
                         .padding(.vertical, 10)
-                        .frame(maxWidth: .infinity)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                         .background(isWatched ? palette.surface : palette.surfaceElevated, in: RoundedRectangle(cornerRadius: 8))
                         .overlay(
                             RoundedRectangle(cornerRadius: 8)
-                                .stroke(isWatched ? palette.positiveGreen.opacity(0.45) : Color.white.opacity(0.14), lineWidth: 1)
+                                .stroke(isWatched ? palette.positiveGreen.opacity(0.45) : palette.borderSubtle, lineWidth: 1)
                         )
                     }
+                    .frame(maxHeight: .infinity, alignment: .top)
                     .buttonStyle(.plain)
                 }
             }
@@ -330,7 +348,7 @@ struct AnimeDetailView: View {
                 .padding(.horizontal, 16)
 
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 10) {
+                LazyHStack(alignment: .top, spacing: 10) {
                     ForEach(shows) { show in
                         Button {
                             onOpenAnime(show.id)
@@ -345,7 +363,7 @@ struct AnimeDetailView: View {
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 8)
-                                        .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                                        .stroke(palette.borderSubtle, lineWidth: 1)
                                 )
 
                                 Text(show.title)

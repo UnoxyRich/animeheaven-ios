@@ -93,9 +93,11 @@ struct AnimeHeavenParserTests {
         let result = AnimeHeavenParser.parseChartPage(html: html, isPopularRank: true)
         #expect(result.title == "Popular Today")
         #expect(result.items.count == 2)
+        #expect(result.items[0].isPopularRank == true)
         #expect(result.items[0].rankDirection == .up)
         #expect(result.items[0].rankDelta == "+2")
         #expect(result.items[0].japaneseTitle == "")
+        #expect(result.items[1].isPopularRank == true)
         #expect(result.items[1].rankDirection == .down)
         #expect(result.items[1].rankDelta == "-4")
     }

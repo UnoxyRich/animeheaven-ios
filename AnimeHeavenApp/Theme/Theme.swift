@@ -17,6 +17,22 @@ public struct AhThemePalette: Sendable, Equatable {
     public let positiveGreen: Color
     public let isLight: Bool
 
+    public var topBackdropColor: Color {
+        gradientColors?.first ?? background
+    }
+
+    public var bottomBackdropColor: Color {
+        gradientColors?.last ?? background
+    }
+
+    public var backgroundGradient: LinearGradient {
+        LinearGradient(
+            colors: gradientColors ?? [background, surface],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
     private static let cachedPalettes: [AhThemeId: AhThemePalette] = {
         var dict: [AhThemeId: AhThemePalette] = [:]
         for id in AhThemeId.allCases {

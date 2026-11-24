@@ -88,7 +88,9 @@ struct BookmarksView: View {
                                                             .foregroundStyle(palette.textMuted)
                                                     }
                                                 }
+                                                .frame(maxHeight: .infinity, alignment: .top)
                                             }
+                                            .frame(maxHeight: .infinity, alignment: .top)
                                             .buttonStyle(.plain)
 
                                             Button {
@@ -101,6 +103,7 @@ struct BookmarksView: View {
                                                     .padding(6)
                                             }
                                         }
+                                        .frame(maxHeight: .infinity, alignment: .top)
                                     }
                                 }
                                 .padding(.horizontal, 16)
@@ -108,10 +111,12 @@ struct BookmarksView: View {
                         }
                     }
                     .padding(.top, 12)
-                    .padding(.bottom, 92)
+                    .padding(.bottom, 20)
                 }
             }
         }
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .navigationBar)
         .safeAreaInset(edge: .top, spacing: 0) {
             AhRootNavigationBar(title: "My Bookmarks", onSearch: onOpenSearch, onRandom: onOpenRandom, onSettings: onOpenSettings)

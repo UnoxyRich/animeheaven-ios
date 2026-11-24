@@ -129,11 +129,13 @@ struct RootTabView: View {
                 .tag(AppTab.bookmarks)
             }
             .tint(palette.crimson)
-
-            if isShowingRootTab {
-                FloatingLiquidGlassTabBar(selectedTab: $selectedTab)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if isShowingRootTab {
+                    FloatingLiquidGlassTabBar(selectedTab: $selectedTab)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
             }
+            .animation(.easeInOut(duration: 0.2), value: isShowingRootTab)
 
             if isResolvingRandom {
                 Color.black.opacity(0.45).ignoresSafeArea()

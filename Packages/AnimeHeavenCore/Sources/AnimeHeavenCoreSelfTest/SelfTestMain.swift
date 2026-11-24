@@ -102,7 +102,13 @@ struct AnimeHeavenCoreSelfTestMain {
             let res = AnimeHeavenParser.parseChartPage(html: html, isPopularRank: true)
             try check(res.title == "Popular Today" && res.items.count == 1, "chart title/count mismatch")
             try check(res.items[0].rankDirection == .up && res.items[0].rankDelta == "+2", "rank mismatch")
+            try check(res.items[0].isPopularRank, "popular chart item should set isPopularRank")
             try check(res.items[0].japaneseTitle.isEmpty, "dash jp title should normalize empty")
+
+            // Verify legacy cached AnimeCard JSON without `isPopularRank` decodes cleanly
+            let legacyJson = #"{"id":"a1","title":"Show","japaneseTitle":"","coverUrl":"","episodeLabel":"3","timerOrStatus":"","rankDirection":"UP"}"#
+            let decoded = try JSONDecoder().decode(AnimeCard.self, from: Data(legacyJson.utf8))
+            try check(decoded.isPopularRank && decoded.rankDirection == .up, "legacy AnimeCard decoding mismatch")
         }
 
         await run("Parser: parseFastSearch + parseSimilarGrid + parseAnimeDetail + parseGatePage") {

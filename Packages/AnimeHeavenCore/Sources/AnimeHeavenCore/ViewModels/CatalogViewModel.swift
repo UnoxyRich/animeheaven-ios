@@ -63,7 +63,13 @@ public final class CatalogViewModel {
     public private(set) var isRefreshing: Bool = false
     public private(set) var errorMessage: String?
     public private(set) var bookmarkedIds: Set<String> = []
-    public var viewMode: FeedViewMode
+    public var viewMode: FeedViewMode {
+        get { kind.isGridPage ? .grid : settingsStore.defaultViewMode }
+        set {
+            guard !kind.isGridPage else { return }
+            settingsStore.defaultViewMode = newValue
+        }
+    }
 
     @ObservationIgnored
     private let repository: AnimeHeavenRepository
@@ -73,6 +79,8 @@ public final class CatalogViewModel {
     private let preloader: AnimePreloader?
     @ObservationIgnored
     private var loadTask: Task<Void, Never>?
+    @ObservationIgnored
+    private var dbObserverTask: Task<Void, Never>?
 
     public init(
         kind: CatalogKind,
@@ -85,7 +93,35 @@ public final class CatalogViewModel {
         self.repository = repository
         self.settingsStore = settingsStore
         self.preloader = preloader
-        self.viewMode = kind.isGridPage ? .grid : settingsStore.defaultViewMode
+    }
+
+    public func startObservingLocalState() {
+        guard dbObserverTask == nil else { return }
+        let db = repository.database
+        dbObserverTask = Task { [weak self] in
+            let stream = await db.observeChanges()
+            await self?.refreshBookmarks()
+            for await event in stream {
+                guard !Task.isCancelled, let self else { break }
+                if event == .bookmarks {
+                    await self.refreshBookmarks()
+                }
+            }
+        }
+    }
+
+    public func stopObservingLocalState() {
+        dbObserverTask?.cancel()
+        dbObserverTask = nil
+    }
+
+    deinit {
+        dbObserverTask?.cancel()
+        loadTask?.cancel()
+    }
+
+    private func refreshBookmarks() async {
+        self.bookmarkedIds = await repository.getBookmarkedIds()
     }
 
     public func load(forceRefresh: Bool = false) {
@@ -101,9 +137,7 @@ public final class CatalogViewModel {
 
     public func toggleViewMode() {
         guard !kind.isGridPage else { return }
-        let next: FeedViewMode = viewMode == .list ? .grid : .list
-        viewMode = next
-        settingsStore.defaultViewMode = next
+        viewMode = viewMode == .list ? .grid : .list
     }
 
     private func runLoad(forceRefresh: Bool) async {

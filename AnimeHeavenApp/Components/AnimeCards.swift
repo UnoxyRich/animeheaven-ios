@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 import AnimeHeavenCore
 
@@ -29,7 +30,21 @@ struct AhRootNavigationBar: View {
             AhTopActionButtons(onSearch: onSearch, onRandom: onRandom, onSettings: onSettings, rootLayout: true)
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 4)
+        .padding(.top, 4)
+        .padding(.bottom, 8)
+        .background {
+            LinearGradient(
+                stops: [
+                    .init(color: palette.topBackdropColor.opacity(0.96), location: 0.0),
+                    .init(color: palette.topBackdropColor.opacity(0.78), location: 0.65),
+                    .init(color: palette.topBackdropColor.opacity(0.0), location: 1.0)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea(edges: .top)
+            .allowsHitTesting(false)
+        }
     }
 }
 
@@ -98,7 +113,9 @@ struct NetflixCategoryPillStrip: View {
                 pillButton(title: "Surprise Me", systemImage: "shuffle", action: onRandom)
             }
             .padding(.horizontal, 16)
+            .padding(.vertical, 4)
         }
+        .scrollClipDisabled()
     }
 
     private func pillButton(title: String, systemImage: String?, action: @escaping () -> Void) -> some View {
@@ -125,11 +142,19 @@ struct NetflixCategoryPillStrip: View {
 struct HeroBannerPager: View {
     let banners: [BannerItem]
     let imageCache: ImageCacheManager
+    var isAutoScrollEnabled: Bool = true
     let onSelect: (String) -> Void
 
     @Environment(\.ahPalette) private var palette
     @Environment(\.scenePhase) private var scenePhase
     @State private var currentIndex: Int = 0
+
+    private var shouldAutoScroll: Bool {
+        isAutoScrollEnabled
+            && scenePhase == .active
+            && banners.count > 1
+            && !ProcessInfo.processInfo.arguments.contains("-UITestDisableAutoScroll")
+    }
 
     var body: some View {
         if !banners.isEmpty {
@@ -235,6 +260,7 @@ struct HeroBannerPager: View {
                                         )
                                     }
                                     .buttonStyle(.plain)
+                                    .accessibilityIdentifier(idx == currentIndex ? "hero.details" : "hero.details.\(idx)")
                                 }
                                 .padding(.top, 4)
                             }
@@ -244,14 +270,14 @@ struct HeroBannerPager: View {
                         .clipShape(RoundedRectangle(cornerRadius: 16))
                         .overlay(
                             RoundedRectangle(cornerRadius: 16)
-                                .stroke(Color.white.opacity(0.22), lineWidth: 1)
+                                .stroke(palette.isLight ? palette.borderSubtle : Color.white.opacity(0.22), lineWidth: 1)
                         )
                         .padding(.horizontal, 16)
                         .tag(idx)
                     }
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
-                .frame(height: 364)
+                .frame(height: 332)
 
                 // Dedicated non-overlapping Netflix capsule page indicator
                 if banners.count > 1 {
@@ -265,11 +291,18 @@ struct HeroBannerPager: View {
                     }
                 }
             }
-            .task(id: scenePhase) {
-                guard scenePhase == .active, banners.count > 1 else { return }
+            .onChange(of: banners.count) { _, newCount in
+                if newCount == 0 {
+                    currentIndex = 0
+                } else if currentIndex >= newCount {
+                    currentIndex = newCount - 1
+                }
+            }
+            .task(id: "\(shouldAutoScroll)-\(banners.count)") {
+                guard shouldAutoScroll else { return }
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .seconds(6))
-                    if Task.isCancelled { break }
+                    if Task.isCancelled || banners.isEmpty { break }
                     withAnimation(.easeInOut(duration: 0.35)) {
                         currentIndex = (currentIndex + 1) % banners.count
                     }
@@ -377,7 +410,7 @@ struct ContinueWatchingRow: View {
                                 .clipShape(RoundedRectangle(cornerRadius: 10))
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 10)
-                                        .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                                        .stroke(palette.borderSubtle, lineWidth: 1)
                                 )
                             }
                             .buttonStyle(.plain)
@@ -440,9 +473,9 @@ struct PopularHorizontalStrip: View {
                                             .font(.system(size: rank == 10 ? 54 : 68, weight: .black))
                                             .tracking(-3)
                                             .foregroundStyle(
-                                                palette.isLight ? Color.black.opacity(0.22) : Color.white.opacity(0.36)
+                                                palette.isLight ? palette.textPrimary.opacity(0.28) : Color.white.opacity(0.45)
                                             )
-                                            .offset(x: 6, y: 4)
+                                            .offset(x: 6, y: rank == 10 ? 10 : 12)
                                     }
 
                                     ZStack(alignment: .bottomLeading) {
@@ -455,10 +488,9 @@ struct PopularHorizontalStrip: View {
 
                                         LinearGradient(
                                             stops: [
-                                                .init(color: .clear, location: 0.0),
-                                                .init(color: Color.black.opacity(0.32), location: 0.42),
-                                                .init(color: Color.black.opacity(0.84), location: 0.78),
-                                                .init(color: Color.black.opacity(0.95), location: 1.0)
+                                                .init(color: .clear, location: 0.55),
+                                                .init(color: Color.black.opacity(0.68), location: 0.80),
+                                                .init(color: Color.black.opacity(0.92), location: 1.0)
                                             ],
                                             startPoint: .top,
                                             endPoint: .bottom
@@ -477,7 +509,15 @@ struct PopularHorizontalStrip: View {
                                                     .foregroundStyle(.white)
                                                     .padding(.horizontal, 4)
                                                     .padding(.vertical, 3)
-                                                    .background(palette.crimson)
+                                                    .background(
+                                                        palette.crimson,
+                                                        in: UnevenRoundedRectangle(
+                                                            topLeadingRadius: 0,
+                                                            bottomLeadingRadius: 6,
+                                                            bottomTrailingRadius: 0,
+                                                            topTrailingRadius: 0
+                                                        )
+                                                    )
                                                 }
                                                 Spacer()
                                             }
@@ -495,7 +535,7 @@ struct PopularHorizontalStrip: View {
                                     .clipShape(RoundedRectangle(cornerRadius: 8))
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 8)
-                                            .stroke(Color.white.opacity(0.14), lineWidth: 1)
+                                            .stroke(palette.borderSubtle, lineWidth: 1)
                                     )
                                 }
                             }
@@ -514,6 +554,7 @@ struct ScheduleListRow: View {
     let card: AnimeCard
     let isBookmarked: Bool
     let imageCache: ImageCacheManager
+    var isPopularRank: Bool = false
     let onSelect: () -> Void
 
     @Environment(\.ahPalette) private var palette
@@ -531,7 +572,8 @@ struct ScheduleListRow: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8))
 
                     if !card.episodeLabel.isEmpty {
-                        let badgeText = card.rankDirection != nil
+                        let isRankBadge = isPopularRank || card.isPopularRank || card.rankDirection != nil
+                        let badgeText = isRankBadge
                             ? "#\(card.episodeLabel)"
                             : "EP \(card.episodeLabel)"
                         Text(badgeText)
@@ -574,7 +616,7 @@ struct ScheduleListRow: View {
             }
             .padding(8)
             .background(palette.surface, in: RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.09), lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(palette.borderSubtle, lineWidth: 1))
         }
         .buttonStyle(.plain)
     }
@@ -584,6 +626,7 @@ struct ScheduleGridCard: View {
     let card: AnimeCard
     let isBookmarked: Bool
     let imageCache: ImageCacheManager
+    var isPopularRank: Bool = false
     let onSelect: () -> Void
 
     @Environment(\.ahPalette) private var palette
@@ -601,7 +644,7 @@ struct ScheduleGridCard: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                     .overlay(
                         RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                            .stroke(palette.borderSubtle, lineWidth: 1)
                     )
 
                     LinearGradient(
@@ -612,7 +655,8 @@ struct ScheduleGridCard: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8))
 
                     if !card.episodeLabel.isEmpty {
-                        let badgeText = card.rankDirection != nil
+                        let isRankBadge = isPopularRank || card.isPopularRank || card.rankDirection != nil
+                        let badgeText = isRankBadge
                             ? "#\(card.episodeLabel)"
                             : "EP \(card.episodeLabel)"
                         Text(badgeText)
@@ -641,7 +685,9 @@ struct ScheduleGridCard: View {
                     }
                 }
             }
+            .frame(maxHeight: .infinity, alignment: .top)
         }
+        .frame(maxHeight: .infinity, alignment: .top)
         .buttonStyle(.plain)
     }
 }
@@ -651,14 +697,36 @@ struct RankOrTimerBadge: View {
     @Environment(\.ahPalette) private var palette
 
     var body: some View {
-        if let dir = card.rankDirection, let delta = card.rankDelta {
-            HStack(spacing: 2) {
-                Image(systemName: dir == .up ? "arrow.up" : (dir == .down ? "arrow.down" : "minus"))
-                    .font(.caption2.weight(.bold))
-                Text(delta)
-                    .font(.caption2.weight(.bold))
+        if let dir = card.rankDirection {
+            let cleanedDelta = (card.rankDelta ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if dir == .same {
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(palette.textMuted)
+                        .frame(width: 5, height: 5)
+                    Text("Steady")
+                        .font(.caption2.weight(.semibold))
+                }
+                .foregroundStyle(palette.textSecondary)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 2)
+                .background(palette.surfaceElevated, in: Capsule())
+            } else {
+                let displayDelta = cleanedDelta.trimmingCharacters(in: CharacterSet(charactersIn: "+-"))
+                let badgeColor = dir == .up ? palette.positiveGreen : palette.crimson
+                HStack(spacing: 2) {
+                    Image(systemName: dir == .up ? "arrow.up" : "arrow.down")
+                        .font(.system(size: 9, weight: .bold))
+                    if !displayDelta.isEmpty {
+                        Text(displayDelta)
+                            .font(.caption2.weight(.bold))
+                    }
+                }
+                .foregroundStyle(badgeColor)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(badgeColor.opacity(palette.isLight ? 0.14 : 0.16), in: Capsule())
             }
-            .foregroundStyle(dir == .up ? palette.positiveGreen : (dir == .down ? palette.crimson : palette.textSecondary))
         } else if !card.timerOrStatus.isEmpty {
             Text(card.timerOrStatus)
                 .font(.caption2.weight(.semibold))
@@ -702,11 +770,12 @@ struct AhErrorView: View {
             Button(action: onRetry) {
                 Label("Try Again", systemImage: "arrow.clockwise")
                     .font(.subheadline.weight(.heavy))
-                    .foregroundStyle(.black)
+                    .foregroundStyle(palette.isLight ? Color.white : Color.black)
                     .padding(.horizontal, 20)
                     .padding(.vertical, 10)
-                    .background(Color.white, in: RoundedRectangle(cornerRadius: 6))
+                    .background(palette.isLight ? palette.crimson : Color.white, in: RoundedRectangle(cornerRadius: 6))
             }
+            .buttonStyle(.plain)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

@@ -151,7 +151,8 @@ public enum AnimeHeavenParser {
                 episodeLabel: epText,
                 timerOrStatus: timerOrStatus,
                 rankDelta: rankDelta,
-                rankDirection: rankDirection
+                rankDirection: rankDirection,
+                isPopularRank: isPopularRank
             )
         }
     }

@@ -64,13 +64,20 @@ jobs:
           SIM_UDID=$(xcrun simctl list devices available iPhone -j | python3 -c '
           import json, sys
           data = json.load(sys.stdin)
+          candidates = []
           for runtime, devices in sorted(data.get("devices", {}).items(), reverse=True):
               if not runtime.endswith("iOS-26-2"):
                   continue
               for d in devices:
                   if d.get("isAvailable") and "iPhone" in d.get("name", ""):
-                      print(d["udid"])
-                      sys.exit(0)
+                      candidates.append(d)
+          preferred = [d for d in candidates if d.get("name") == "iPhone 16"]
+          if not preferred:
+              preferred = [d for d in candidates if "iPhone 16" in d.get("name", "")]
+          if not preferred:
+              preferred = candidates
+          if preferred:
+              print(preferred[0]["udid"])
           ')
           if [ -z "$SIM_UDID" ]; then
             RUNTIME_ID=$(xcrun simctl list runtimes iOS -j | python3 -c '
@@ -83,6 +90,11 @@ jobs:
           echo "Booting simulator UDID: $SIM_UDID"
           xcrun simctl boot "$SIM_UDID" || true
           xcrun simctl bootstatus "$SIM_UDID" -b
+          # Suppress QuickPath / Slide-to-Type keyboard onboarding popover in CI
+          xcrun simctl spawn "$SIM_UDID" defaults write com.apple.Preferences DidShowContinuousPathIntroduction -bool true || true
+          xcrun simctl spawn "$SIM_UDID" defaults write com.apple.Preferences KeyboardAutocorrection -bool false || true
+          xcrun simctl spawn "$SIM_UDID" defaults write com.apple.Preferences KeyboardPrediction -bool false || true
+          xcrun simctl spawn "$SIM_UDID" defaults write com.apple.keyboard.preferences DidShowContinuousPathIntroduction -bool true || true
           echo "udid=$SIM_UDID" >> "$GITHUB_OUTPUT"
 
       - name: Build & run real XCUITests walkthrough on booted iOS Simulator
@@ -136,7 +148,7 @@ jobs:
           ls -lh screenshots/
 
       - name: Require the complete iOS walkthrough
-        run: test "$(find screenshots -maxdepth 1 -name '*.png' | wc -l)" -ge 8
+        run: test "$(find screenshots -maxdepth 1 -name '*.png' | wc -l)" -ge 10
 
       - name: Upload iOS App Screenshots
         if: always()

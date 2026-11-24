@@ -16,10 +16,22 @@ struct SettingsView: View {
             Form {
                 Section("Appearance") {
                     ForEach(AhThemeId.allCases) { theme in
+                        let themePreviewPalette = AhThemePalette.palette(for: theme)
+                        let isSelected = settings.themeId == theme
                         Button {
                             settings.themeId = theme
                         } label: {
-                            HStack {
+                            HStack(spacing: 12) {
+                                Circle()
+                                    .fill(themePreviewPalette.backgroundGradient)
+                                    .overlay(
+                                        Circle()
+                                            .strokeBorder(
+                                                themePreviewPalette.crimson.opacity(isSelected ? 1.0 : 0.6),
+                                                lineWidth: isSelected ? 2 : 1.5
+                                            )
+                                    )
+                                    .frame(width: 24, height: 24)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(theme.displayName)
                                         .font(.subheadline.weight(.semibold))
@@ -29,11 +41,13 @@ struct SettingsView: View {
                                         .foregroundStyle(palette.textMuted)
                                 }
                                 Spacer()
-                                if settings.themeId == theme {
+                                if isSelected {
                                     Image(systemName: "checkmark.circle.fill")
-                                        .foregroundStyle(palette.crimson)
+                                        .symbolRenderingMode(.palette)
+                                        .foregroundStyle(.white, palette.crimson)
                                 }
                             }
+                            .contentShape(Rectangle())
                         }
                         .accessibilityLabel(theme.displayName)
                         .accessibilityIdentifier("theme.\(theme.rawValue)")
@@ -48,6 +62,8 @@ struct SettingsView: View {
                         }
                     }
                 }
+                .listRowBackground(palette.surface)
+                .listRowSeparatorTint(palette.borderSubtle)
 
                 Section("Player & Gestures") {
                     Toggle("Auto-Landscape Fullscreen", isOn: Binding(
@@ -82,6 +98,8 @@ struct SettingsView: View {
                         Text("90s").tag(90)
                     }
                 }
+                .listRowBackground(palette.surface)
+                .listRowSeparatorTint(palette.borderSubtle)
 
                 Section("Preloading & Network") {
                     Picker("Preload Mode", selection: Binding(
@@ -96,6 +114,8 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundStyle(palette.textMuted)
                 }
+                .listRowBackground(palette.surface)
+                .listRowSeparatorTint(palette.borderSubtle)
 
                 Section("Storage & Cache") {
                     if let summary = cacheSummary {
@@ -133,6 +153,8 @@ struct SettingsView: View {
                             .foregroundStyle(palette.positiveGreen)
                     }
                 }
+                .listRowBackground(palette.surface)
+                .listRowSeparatorTint(palette.borderSubtle)
             }
             .scrollContentBackground(.hidden)
         }

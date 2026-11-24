@@ -10,7 +10,10 @@ public final class HomeViewModel {
     public private(set) var feed: HomeFeed?
     public private(set) var continueWatching: [ContinueWatchingItem] = []
     public private(set) var bookmarkedIds: Set<String> = []
-    public var viewMode: FeedViewMode
+    public var viewMode: FeedViewMode {
+        get { settingsStore.defaultViewMode }
+        set { settingsStore.defaultViewMode = newValue }
+    }
 
     @ObservationIgnored
     private let repository: AnimeHeavenRepository
@@ -31,7 +34,6 @@ public final class HomeViewModel {
         self.repository = repository
         self.settingsStore = settingsStore
         self.preloader = preloader
-        self.viewMode = settingsStore.defaultViewMode
     }
 
     public func startObservingLocalState() {
@@ -71,9 +73,7 @@ public final class HomeViewModel {
     }
 
     public func toggleViewMode() {
-        let next: FeedViewMode = viewMode == .list ? .grid : .list
-        viewMode = next
-        settingsStore.defaultViewMode = next
+        viewMode = viewMode == .list ? .grid : .list
     }
 
     private func refreshLocalRows() async {

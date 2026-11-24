@@ -155,6 +155,22 @@ struct FloatingLiquidGlassTabBar: View {
         .padding(.vertical, 5)
         .liquidGlass(in: Capsule(), interactive: true)
         .padding(.horizontal, 18)
+        .padding(.top, 10)
         .padding(.bottom, 6)
+        .frame(maxWidth: .infinity)
+        .background(alignment: .bottom) {
+            LinearGradient(
+                stops: [
+                    .init(color: .clear, location: 0.0),
+                    .init(color: palette.bottomBackdropColor.opacity(0.78), location: 0.35),
+                    .init(color: palette.bottomBackdropColor, location: 0.62),
+                    .init(color: palette.bottomBackdropColor, location: 1.0)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea(edges: .bottom)
+            .allowsHitTesting(false)
+        }
     }
 }

@@ -38,6 +38,15 @@ struct CatalogView: View {
         self.onOpenSettings = onOpenSettings
     }
 
+    private var sectionSubtitle: String {
+        switch viewModel.kind {
+        case .popular: return "Ranked by Views"
+        case .newReleases: return "Latest Releases"
+        case .seasonal: return "Seasonal Releases"
+        case .tag: return "Browse by Genre"
+        }
+    }
+
     var body: some View {
         ZStack {
             AhScreenBackground()
@@ -52,7 +61,7 @@ struct CatalogView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
-                            Text(isRootTab ? (viewModel.kind == .popular ? "Ranked by Views" : "Latest Releases") : viewModel.title)
+                            Text(sectionSubtitle)
                                 .font(.title3.weight(.bold))
                                 .foregroundStyle(palette.textPrimary)
                             Spacer()
@@ -63,9 +72,12 @@ struct CatalogView: View {
                                     Image(systemName: viewModel.viewMode == .list ? "square.grid.2x2" : "list.bullet")
                                         .font(.subheadline.weight(.semibold))
                                         .foregroundStyle(palette.textPrimary)
-                                        .padding(8)
+                                        .frame(width: 44, height: 44)
+                                        .contentShape(Circle())
                                         .liquidGlass(in: Circle())
                                 }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel(viewModel.viewMode == .list ? "Switch to Grid View" : "Switch to List View")
                             }
                         }
                         .padding(.horizontal, 16)
@@ -77,6 +89,7 @@ struct CatalogView: View {
                                         card: card,
                                         isBookmarked: viewModel.bookmarkedIds.contains(card.id),
                                         imageCache: imageCache,
+                                        isPopularRank: viewModel.kind.isPopularRank,
                                         onSelect: { onOpenAnime(card.id) }
                                     )
                                 }
@@ -89,6 +102,7 @@ struct CatalogView: View {
                                         card: card,
                                         isBookmarked: viewModel.bookmarkedIds.contains(card.id),
                                         imageCache: imageCache,
+                                        isPopularRank: viewModel.kind.isPopularRank,
                                         onSelect: { onOpenAnime(card.id) }
                                     )
                                 }
@@ -97,7 +111,7 @@ struct CatalogView: View {
                         }
                     }
                     .padding(.top, 12)
-                    .padding(.bottom, isRootTab ? 92 : 20)
+                    .padding(.bottom, 20)
                 }
                 .refreshable {
                     await viewModel.refreshAsync()
@@ -113,22 +127,40 @@ struct CatalogView: View {
                     onRandom: onOpenRandom, onSettings: onOpenSettings)
             }
         }
-        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
         .toolbar {
             if !isRootTab {
-                ToolbarItem(placement: .topBarTrailing) {
-                    AhTopActionButtons(
-                        onSearch: onOpenSearch,
-                        onRandom: onOpenRandom,
-                        onSettings: onOpenSettings
-                    )
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button(action: onOpenSearch) {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundStyle(palette.textPrimary)
+                    }
+                    .accessibilityLabel("Search")
+                    .accessibilityIdentifier("topbar.search")
+
+                    Button(action: onOpenRandom) {
+                        Image(systemName: "shuffle")
+                            .foregroundStyle(palette.textPrimary)
+                    }
+                    .accessibilityLabel("Random Anime")
+                    .accessibilityIdentifier("topbar.random")
+
+                    Button(action: onOpenSettings) {
+                        Image(systemName: "gearshape.fill")
+                            .foregroundStyle(palette.textPrimary)
+                    }
+                    .accessibilityLabel("Settings")
+                    .accessibilityIdentifier("topbar.settings")
                 }
             }
         }
         .onAppear {
+            viewModel.startObservingLocalState()
             if viewModel.items.isEmpty {
                 viewModel.load()
             }
+        }
+        .onDisappear {
+            viewModel.stopObservingLocalState()
         }
     }
 }

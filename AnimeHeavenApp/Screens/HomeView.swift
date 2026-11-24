@@ -13,6 +13,7 @@ struct HomeView: View {
     let onOpenSettings: () -> Void
 
     @Environment(\.ahPalette) private var palette
+    @State private var isHomeVisible = true
     private let gridColumns = [GridItem(.adaptive(minimum: 112, maximum: 165), spacing: 12)]
 
     var body: some View {
@@ -27,7 +28,7 @@ struct HomeView: View {
                 }
             } else if let feed = viewModel.feed {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 20) {
+                    LazyVStack(alignment: .leading, spacing: 16) {
                         NetflixCategoryPillStrip(
                             seasonLabel: feed.seasonLabel,
                             onSeasonal: {
@@ -42,6 +43,7 @@ struct HomeView: View {
                         HeroBannerPager(
                             banners: feed.banners,
                             imageCache: imageCache,
+                            isAutoScrollEnabled: isHomeVisible,
                             onSelect: onOpenAnime
                         )
 
@@ -60,7 +62,7 @@ struct HomeView: View {
 
                         VStack(alignment: .leading, spacing: 12) {
                             HStack {
-                                Text("Subbed Schedule")
+                                Text("Subbed Anime Schedule")
                                     .font(.title3.weight(.bold))
                                     .foregroundStyle(palette.textPrimary)
                                 Spacer()
@@ -70,9 +72,12 @@ struct HomeView: View {
                                     Image(systemName: viewModel.viewMode == .list ? "square.grid.2x2" : "list.bullet")
                                         .font(.subheadline.weight(.semibold))
                                         .foregroundStyle(palette.textPrimary)
-                                        .padding(8)
-                                        .background(palette.surfaceElevated, in: Circle())
+                                        .frame(width: 44, height: 44)
+                                        .contentShape(Circle())
+                                        .liquidGlass(in: Circle())
                                 }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel(viewModel.viewMode == .list ? "Switch to Grid View" : "Switch to List View")
                             }
                             .padding(.horizontal, 16)
 
@@ -103,25 +108,29 @@ struct HomeView: View {
                             }
                         }
                     }
-                    .padding(.top, 12)
-                    .padding(.bottom, 92)
+                    .padding(.top, 8)
+                    .padding(.bottom, 20)
                 }
                 .refreshable {
                     await viewModel.refreshAsync()
                 }
             }
         }
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .navigationBar)
         .safeAreaInset(edge: .top, spacing: 0) {
             AhRootNavigationBar(title: "For You", onSearch: onOpenSearch, onRandom: onOpenRandom, onSettings: onOpenSettings)
         }
         .onAppear {
+            isHomeVisible = true
             viewModel.startObservingLocalState()
             if viewModel.feed == nil {
                 viewModel.loadHome()
             }
         }
         .onDisappear {
+            isHomeVisible = false
             viewModel.stopObservingLocalState()
         }
     }

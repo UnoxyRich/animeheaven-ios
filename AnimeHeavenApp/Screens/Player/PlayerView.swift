@@ -21,6 +21,7 @@ struct PlayerView: View {
 
     @Environment(\.ahPalette) private var palette
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     @StateObject private var modelStorage: ViewModelStorage<PlayerViewModel>
     private var viewModel: PlayerViewModel { modelStorage.value }
@@ -98,6 +99,7 @@ struct PlayerView: View {
 
             if !isInPipMode {
                 gestureOverlay
+                    .ignoresSafeArea()
             }
 
             if !isInPipMode && (viewModel.isLoading || (isBuffering && viewModel.errorMessage == nil)) {
@@ -333,16 +335,18 @@ struct PlayerView: View {
     // MARK: - HUD Overlay
 
     private var hudOverlay: some View {
-        VStack(spacing: 0) {
+        let isCompactPortrait = !isLandscape && verticalSizeClass == .regular
+        return VStack(spacing: 0) {
             // Top bar
-            HStack(spacing: 10) {
+            HStack(spacing: isCompactPortrait ? 6 : 8) {
                 Button { exitPlayer() } label: {
                     Image(systemName: "chevron.left")
                         .font(.headline.weight(.bold))
                         .foregroundStyle(.white)
-                        .padding(10)
+                        .frame(width: 36, height: 36)
                         .background(Color.black.opacity(0.55), in: Circle())
                 }
+                .accessibilityLabel("Close Player")
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(viewModel.animeTitle)
@@ -356,20 +360,23 @@ struct PlayerView: View {
                             .lineLimit(1)
                     }
                 }
+                .frame(minWidth: 64, alignment: .leading)
+                .layoutPriority(1)
 
-                Spacer()
+                Spacer(minLength: 4)
 
-                if viewModel.mirrorState.mirrorCount > 1 {
+                if !isCompactPortrait && viewModel.mirrorState.mirrorCount > 1 {
                     Button {
                         hudNonce += 1
                         viewModel.cycleMirrorManually(currentPositionMs: progress.positionMs)
                     } label: {
                         Text(viewModel.mirrorState.displayLabel)
-                            .font(.caption.weight(.bold))
+                            .font(.caption2.weight(.bold))
                             .foregroundStyle(.white)
-                            .padding(.horizontal, 10)
+                            .padding(.horizontal, 9)
                             .padding(.vertical, 6)
                             .background(Color.white.opacity(0.18), in: Capsule())
+                            .fixedSize()
                     }
                 }
 
@@ -378,34 +385,74 @@ struct PlayerView: View {
                     cycleSpeed()
                 } label: {
                     Text(String(format: "%.2gx", playbackRate))
-                        .font(.caption.weight(.bold))
+                        .font(.caption2.weight(.bold))
                         .foregroundStyle(.white)
-                        .padding(.horizontal, 10)
+                        .padding(.horizontal, 9)
                         .padding(.vertical, 6)
                         .background(Color.white.opacity(0.18), in: Capsule())
+                        .fixedSize()
                 }
+                .accessibilityLabel("Playback Speed")
 
-                Button {
-                    hudNonce += 1
-                    resizeMode = resizeMode.next()
-                } label: {
-                    Text(resizeMode.rawValue)
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(Color.white.opacity(0.18), in: Capsule())
-                }
+                if isCompactPortrait {
+                    Menu {
+                        Button {
+                            hudNonce += 1
+                            resizeMode = resizeMode.next()
+                        } label: {
+                            Label("Aspect: \(resizeMode.rawValue)", systemImage: "aspectratio")
+                        }
 
-                if pipCoordinator.isPipSupported {
-                    Button {
-                        pipCoordinator.startPip()
+                        if viewModel.mirrorState.mirrorCount > 1 {
+                            Button {
+                                hudNonce += 1
+                                viewModel.cycleMirrorManually(currentPositionMs: progress.positionMs)
+                            } label: {
+                                Label("Mirror: \(viewModel.mirrorState.displayLabel)", systemImage: "arrow.triangle.2.circlepath")
+                            }
+                        }
+
+                        if pipCoordinator.isPipSupported {
+                            Button {
+                                pipCoordinator.startPip()
+                            } label: {
+                                Label("Picture in Picture", systemImage: "pip.enter")
+                            }
+                        }
                     } label: {
-                        Image(systemName: "pip.enter")
+                        Image(systemName: "ellipsis")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.white)
-                            .padding(8)
+                            .frame(width: 34, height: 34)
                             .background(Color.white.opacity(0.18), in: Circle())
+                    }
+                    .accessibilityLabel("More Playback Options")
+                } else {
+                    Button {
+                        hudNonce += 1
+                        resizeMode = resizeMode.next()
+                    } label: {
+                        Text(resizeMode.rawValue)
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 6)
+                            .background(Color.white.opacity(0.18), in: Capsule())
+                            .fixedSize()
+                    }
+                    .accessibilityLabel("Video Aspect Mode")
+
+                    if pipCoordinator.isPipSupported {
+                        Button {
+                            pipCoordinator.startPip()
+                        } label: {
+                            Image(systemName: "pip.enter")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: 34, height: 34)
+                                .background(Color.white.opacity(0.18), in: Circle())
+                        }
+                        .accessibilityLabel("Picture in Picture")
                     }
                 }
 
@@ -416,9 +463,10 @@ struct PlayerView: View {
                     Image(systemName: "rectangle.portrait.rotate")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.white)
-                        .padding(8)
+                        .frame(width: 34, height: 34)
                         .background(Color.white.opacity(0.18), in: Circle())
                 }
+                .accessibilityLabel("Toggle Orientation")
 
                 Button {
                     isLocked = true
@@ -427,15 +475,17 @@ struct PlayerView: View {
                     Image(systemName: "lock.fill")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.white)
-                        .padding(8)
+                        .frame(width: 34, height: 34)
                         .background(Color.white.opacity(0.18), in: Circle())
                 }
+                .accessibilityLabel("Lock Controls")
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, isCompactPortrait ? 12 : 16)
             .padding(.top, 14)
             .padding(.bottom, 16)
             .background(
                 LinearGradient(colors: [Color.black.opacity(0.75), .clear], startPoint: .top, endPoint: .bottom)
+                    .ignoresSafeArea(edges: [.top, .horizontal])
             )
 
             Spacer()
@@ -447,18 +497,19 @@ struct PlayerView: View {
                     seekBy(deltaMs: -Int64(step) * 1000, label: "-\(step)s")
                 } label: {
                     Image(systemName: "gobackward")
-                        .font(.system(size: 30, weight: .semibold))
+                        .font(.system(size: 28, weight: .semibold))
                         .foregroundStyle(.white)
-                        .padding(12)
+                        .frame(width: 54, height: 54)
                         .background(Color.black.opacity(0.45), in: Circle())
                 }
                 .accessibilityLabel("Back \(step) seconds")
 
                 Button { togglePlayPause() } label: {
                     Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 38, weight: .bold))
+                        .font(.system(size: 34, weight: .bold))
                         .foregroundStyle(.white)
-                        .padding(20)
+                        .offset(x: isPlaying ? 0 : 2)
+                        .frame(width: 72, height: 72)
                         .background(palette.crimson, in: Circle())
                 }
                 .accessibilityLabel(isPlaying ? "Pause" : "Play")
@@ -467,9 +518,9 @@ struct PlayerView: View {
                     seekBy(deltaMs: Int64(step) * 1000, label: "+\(step)s")
                 } label: {
                     Image(systemName: "goforward")
-                        .font(.system(size: 30, weight: .semibold))
+                        .font(.system(size: 28, weight: .semibold))
                         .foregroundStyle(.white)
-                        .padding(12)
+                        .frame(width: 54, height: 54)
                         .background(Color.black.opacity(0.45), in: Circle())
                 }
                 .accessibilityLabel("Forward \(step) seconds")
@@ -539,6 +590,7 @@ struct PlayerView: View {
             .padding(.bottom, 16)
             .background(
                 LinearGradient(colors: [.clear, Color.black.opacity(0.82)], startPoint: .top, endPoint: .bottom)
+                    .ignoresSafeArea(edges: [.bottom, .horizontal])
             )
         }
     }

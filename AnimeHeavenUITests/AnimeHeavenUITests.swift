@@ -9,6 +9,7 @@ final class AnimeHeavenUITests: XCTestCase {
     @MainActor
     func testFullAppWalkthroughCapturesScreenshots() throws {
         let app = XCUIApplication()
+        app.launchArguments += ["-UITestDisableAutoScroll"]
         app.launch()
 
         // 1. Home (Schedule) — Liquid Glass Floating Tab Bar
@@ -21,25 +22,28 @@ final class AnimeHeavenUITests: XCTestCase {
         XCTAssertTrue(header.waitForExistence(timeout: 5))
         XCTAssertEqual(header.label, "For You")
         XCTAssertGreaterThan(header.frame.width, 48, "The Home title must not collapse into an icon-only tile.")
-        sleep(5)
+        XCTAssertTrue(app.staticTexts["Popular Today"].waitForExistence(timeout: 15), "Home Popular Today section should load")
+        sleep(2)
         attachScreenshot(named: "01-ios-home-schedule")
 
         // 2. New Releases tab
         app.buttons["tab.new"].tap()
-        sleep(3)
+        _ = app.staticTexts["Latest Releases"].waitForExistence(timeout: 15)
+        sleep(2)
         attachScreenshot(named: "02-ios-new")
 
         // 3. Popular tab
         app.buttons["tab.popular"].tap()
-        sleep(3)
+        _ = app.staticTexts["Ranked by Views"].waitForExistence(timeout: 15)
+        sleep(2)
         attachScreenshot(named: "03-ios-popular")
 
         // 4. Bookmarks tab
         app.buttons["tab.bookmarks"].tap()
-        sleep(2)
+        sleep(1)
         attachScreenshot(named: "04-ios-bookmarks")
 
-        // 5. Return to Schedule and open Search with live query
+        // 5. Return to Schedule and open Search with full query (dismissing keyboard cleanly)
         scheduleTab.tap()
         sleep(1)
         let searchBtn = app.buttons["topbar.search"]
@@ -49,8 +53,19 @@ final class AnimeHeavenUITests: XCTestCase {
         let searchField = app.textFields["Search anime titles..."]
         XCTAssertTrue(searchField.waitForExistence(timeout: 5), "Search field should exist")
         searchField.tap()
-        searchField.typeText("frieren")
-        sleep(3)
+        let keyboardContinue = app.buttons["Continue"]
+        if keyboardContinue.waitForExistence(timeout: 2) {
+            keyboardContinue.tap()
+            sleep(1)
+            searchField.tap()
+        }
+        searchField.typeText("frieren\n")
+        if app.keyboards.buttons["Search"].exists {
+            app.keyboards.buttons["Search"].tap()
+        }
+        let frierenResult = app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "Frieren")).firstMatch
+        _ = frierenResult.waitForExistence(timeout: 15)
+        sleep(2)
         attachScreenshot(named: "05-ios-search-results")
 
         // Navigate back from Search
@@ -77,6 +92,30 @@ final class AnimeHeavenUITests: XCTestCase {
         XCTAssertTrue(scheduleTab.waitForExistence(timeout: 10))
         sleep(2)
         attachScreenshot(named: "08-ios-home-indigo")
+
+        // 9. Switch Theme to Classic Light and verify Settings contrast
+        XCTAssertTrue(settingsBtn.waitForExistence(timeout: 10), "Settings button should be visible")
+        settingsBtn.tap()
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 10), "Settings screen should open")
+        let lightTheme = app.buttons["theme.light"]
+        XCTAssertTrue(lightTheme.waitForExistence(timeout: 5), "Classic Light theme button should exist")
+        if !lightTheme.isHittable {
+            app.swipeUp()
+        }
+        lightTheme.tap()
+        sleep(1)
+        attachScreenshot(named: "09-ios-settings-light")
+
+        // 10. Return to Home (Classic Light) and open Featured Anime Detail
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(scheduleTab.waitForExistence(timeout: 10))
+        let heroDetails = app.buttons["hero.details"].firstMatch
+        XCTAssertTrue(heroDetails.waitForExistence(timeout: 10), "Hero Details button should exist")
+        heroDetails.tap()
+        let myListButton = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "My List")).firstMatch
+        _ = myListButton.waitForExistence(timeout: 15)
+        sleep(2)
+        attachScreenshot(named: "10-ios-detail")
     }
 
     @MainActor

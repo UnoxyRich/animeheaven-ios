@@ -38,6 +38,7 @@ struct SearchView: View {
                     .autocorrectionDisabled()
                     .foregroundStyle(palette.textPrimary)
                     .onSubmit {
+                        searchFocused = false
                         viewModel.submitFullSearch()
                     }
 
@@ -90,6 +91,7 @@ struct SearchView: View {
                                 ForEach(viewModel.recentSearches, id: \.self) { term in
                                     HStack(spacing: 6) {
                                         Button(term) {
+                                            searchFocused = false
                                             viewModel.submitFullSearch(term)
                                         }
                                         .font(.subheadline)
@@ -123,6 +125,7 @@ struct SearchView: View {
                 }
                 .padding(.top, 8)
             }
+            .scrollDismissesKeyboard(.immediately)
         } else if viewModel.isFullSearchMode {
             if viewModel.fullResults.isEmpty {
                 ContentUnavailableView.search(text: viewModel.query)
@@ -149,6 +152,7 @@ struct SearchView: View {
                     }
                     .padding(.vertical, 8)
                 }
+                .scrollDismissesKeyboard(.immediately)
             }
         } else {
             if viewModel.fastResults.isEmpty {
@@ -195,6 +199,7 @@ struct SearchView: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)
                 }
+                .scrollDismissesKeyboard(.immediately)
             }
         }
     }

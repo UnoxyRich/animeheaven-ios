@@ -145,6 +145,7 @@ public struct AnimeCard: Codable, Sendable, Hashable, Identifiable {
     public let timerOrStatus: String
     public let rankDelta: String?
     public let rankDirection: RankDirection?
+    public let isPopularRank: Bool
 
     public init(
         id: String,
@@ -154,7 +155,8 @@ public struct AnimeCard: Codable, Sendable, Hashable, Identifiable {
         episodeLabel: String = "",
         timerOrStatus: String = "",
         rankDelta: String? = nil,
-        rankDirection: RankDirection? = nil
+        rankDirection: RankDirection? = nil,
+        isPopularRank: Bool = false
     ) {
         self.id = id
         self.title = title
@@ -164,6 +166,32 @@ public struct AnimeCard: Codable, Sendable, Hashable, Identifiable {
         self.timerOrStatus = timerOrStatus
         self.rankDelta = rankDelta
         self.rankDirection = rankDirection
+        self.isPopularRank = isPopularRank
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case title
+        case japaneseTitle
+        case coverUrl
+        case episodeLabel
+        case timerOrStatus
+        case rankDelta
+        case rankDirection
+        case isPopularRank
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(String.self, forKey: .id)
+        self.title = try container.decode(String.self, forKey: .title)
+        self.japaneseTitle = try container.decodeIfPresent(String.self, forKey: .japaneseTitle) ?? ""
+        self.coverUrl = try container.decodeIfPresent(String.self, forKey: .coverUrl) ?? ""
+        self.episodeLabel = try container.decodeIfPresent(String.self, forKey: .episodeLabel) ?? ""
+        self.timerOrStatus = try container.decodeIfPresent(String.self, forKey: .timerOrStatus) ?? ""
+        self.rankDelta = try container.decodeIfPresent(String.self, forKey: .rankDelta)
+        self.rankDirection = try container.decodeIfPresent(RankDirection.self, forKey: .rankDirection)
+        self.isPopularRank = try container.decodeIfPresent(Bool.self, forKey: .isPopularRank) ?? (self.rankDirection != nil)
     }
 }
 
