@@ -73,7 +73,10 @@ struct RootTabView: View {
                         onOpenSettings: { push(.settings) }
                     )
                     .toolbar(.hidden, for: .tabBar)
-                    .navigationDestination(for: AppDestination.self) { destinationView($0) }
+                    .navigationDestination(for: AppDestination.self) {
+                        destinationView($0)
+                            .toolbar(.hidden, for: .tabBar)
+                    }
                 }
                 .tag(AppTab.home)
 
@@ -90,7 +93,10 @@ struct RootTabView: View {
                         onOpenSettings: { push(.settings) }
                     )
                     .toolbar(.hidden, for: .tabBar)
-                    .navigationDestination(for: AppDestination.self) { destinationView($0) }
+                    .navigationDestination(for: AppDestination.self) {
+                        destinationView($0)
+                            .toolbar(.hidden, for: .tabBar)
+                    }
                 }
                 .tag(AppTab.newReleases)
 
@@ -107,7 +113,10 @@ struct RootTabView: View {
                         onOpenSettings: { push(.settings) }
                     )
                     .toolbar(.hidden, for: .tabBar)
-                    .navigationDestination(for: AppDestination.self) { destinationView($0) }
+                    .navigationDestination(for: AppDestination.self) {
+                        destinationView($0)
+                            .toolbar(.hidden, for: .tabBar)
+                    }
                 }
                 .tag(AppTab.popular)
 
@@ -124,7 +133,10 @@ struct RootTabView: View {
                         onOpenSettings: { push(.settings) }
                     )
                     .toolbar(.hidden, for: .tabBar)
-                    .navigationDestination(for: AppDestination.self) { destinationView($0) }
+                    .navigationDestination(for: AppDestination.self) {
+                        destinationView($0)
+                            .toolbar(.hidden, for: .tabBar)
+                    }
                 }
                 .tag(AppTab.bookmarks)
             }

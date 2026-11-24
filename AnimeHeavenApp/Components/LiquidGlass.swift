@@ -66,6 +66,7 @@ struct LiquidGlassModifier<S: InsettableShape>: ViewModifier {
                     ),
                     lineWidth: 1.0
                 )
+                .allowsHitTesting(false)
             }
             .shadow(color: Color.black.opacity(palette.isLight ? 0.14 : 0.45), radius: 16, x: 0, y: 8)
     }
@@ -74,6 +75,27 @@ struct LiquidGlassModifier<S: InsettableShape>: ViewModifier {
 extension View {
     func liquidGlass<S: InsettableShape>(in shape: S, interactive: Bool = true) -> some View {
         modifier(LiquidGlassModifier(shape: shape, interactive: interactive))
+    }
+}
+
+/// Visual bar backdrop that also intercepts stray touches so taps on or around
+/// custom floating navigation chrome never pass through to scrollable cards underneath.
+struct TouchBlockingBarBackdrop<Visual: View>: View {
+    let ignoredSafeAreaEdges: Edge.Set
+    @ViewBuilder let visual: () -> Visual
+
+    var body: some View {
+        ZStack {
+            visual()
+                .ignoresSafeArea(edges: ignoredSafeAreaEdges)
+                .allowsHitTesting(false)
+
+            Color.black.opacity(0.001)
+                .ignoresSafeArea(edges: ignoredSafeAreaEdges)
+                .contentShape(Rectangle())
+                .gesture(DragGesture(minimumDistance: 0))
+        }
+        .accessibilityHidden(true)
     }
 }
 
@@ -98,10 +120,14 @@ struct FloatingLiquidGlassTabBar: View {
     ]
 
     var body: some View {
-        HStack(spacing: 4) {
-            ForEach(items, id: \.tab) { item in
+        HStack(spacing: 0) {
+            ForEach(Array(items.enumerated()), id: \.element.tab) { index, item in
                 let isSelected = selectedTab == item.tab
+                let leadingInset: CGFloat = index == 0 ? 6 : 2
+                let trailingInset: CGFloat = index == items.count - 1 ? 6 : 2
+
                 Button {
+                    guard selectedTab != item.tab else { return }
                     withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) {
                         selectedTab = item.tab
                     }
@@ -143,34 +169,39 @@ struct FloatingLiquidGlassTabBar: View {
                                         )
                                 )
                                 .matchedGeometryEffect(id: "liquidGlassActiveTabLens", in: activeLensNamespace)
+                                .allowsHitTesting(false)
                         }
                     }
+                    .padding(.vertical, 5)
+                    .padding(.leading, leadingInset)
+                    .padding(.trailing, trailingInset)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .contentShape(Rectangle())
                 .accessibilityLabel(item.title)
                 .accessibilityIdentifier(item.accessibilityId)
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 5)
-        .liquidGlass(in: Capsule(), interactive: true)
+        .liquidGlass(in: Capsule(), interactive: false)
         .padding(.horizontal, 18)
         .padding(.top, 10)
         .padding(.bottom, 6)
         .frame(maxWidth: .infinity)
         .background(alignment: .bottom) {
-            LinearGradient(
-                stops: [
-                    .init(color: .clear, location: 0.0),
-                    .init(color: palette.bottomBackdropColor.opacity(0.78), location: 0.35),
-                    .init(color: palette.bottomBackdropColor, location: 0.62),
-                    .init(color: palette.bottomBackdropColor, location: 1.0)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea(edges: .bottom)
-            .allowsHitTesting(false)
+            TouchBlockingBarBackdrop(ignoredSafeAreaEdges: .bottom) {
+                LinearGradient(
+                    stops: [
+                        .init(color: .clear, location: 0.0),
+                        .init(color: palette.bottomBackdropColor.opacity(0.78), location: 0.35),
+                        .init(color: palette.bottomBackdropColor, location: 0.62),
+                        .init(color: palette.bottomBackdropColor, location: 1.0)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
         }
     }
 }

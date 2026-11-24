@@ -33,17 +33,17 @@ struct AhRootNavigationBar: View {
         .padding(.top, 4)
         .padding(.bottom, 8)
         .background {
-            LinearGradient(
-                stops: [
-                    .init(color: palette.topBackdropColor.opacity(0.96), location: 0.0),
-                    .init(color: palette.topBackdropColor.opacity(0.78), location: 0.65),
-                    .init(color: palette.topBackdropColor.opacity(0.0), location: 1.0)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea(edges: .top)
-            .allowsHitTesting(false)
+            TouchBlockingBarBackdrop(ignoredSafeAreaEdges: .top) {
+                LinearGradient(
+                    stops: [
+                        .init(color: palette.topBackdropColor.opacity(0.96), location: 0.0),
+                        .init(color: palette.topBackdropColor.opacity(0.78), location: 0.65),
+                        .init(color: palette.topBackdropColor.opacity(0.0), location: 1.0)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
         }
     }
 }
@@ -63,8 +63,11 @@ struct AhTopActionButtons: View {
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
                     .frame(width: rootLayout ? 44 : nil, height: rootLayout ? 44 : nil)
+                    .padding(.leading, rootLayout ? 3 : 0)
                     .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .contentShape(Rectangle())
             .accessibilityLabel("Search")
             .accessibilityIdentifier("topbar.search")
 
@@ -75,6 +78,8 @@ struct AhTopActionButtons: View {
                     .frame(width: rootLayout ? 44 : nil, height: rootLayout ? 44 : nil)
                     .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .contentShape(Rectangle())
             .accessibilityLabel("Random Anime")
             .accessibilityIdentifier("topbar.random")
 
@@ -83,14 +88,17 @@ struct AhTopActionButtons: View {
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
                     .frame(width: rootLayout ? 44 : nil, height: rootLayout ? 44 : nil)
+                    .padding(.trailing, rootLayout ? 3 : 0)
                     .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .contentShape(Rectangle())
             .accessibilityLabel("Settings")
             .accessibilityIdentifier("topbar.settings")
         }
-        .padding(.horizontal, rootLayout ? 3 : 13)
+        .padding(.horizontal, rootLayout ? 0 : 13)
         .padding(.vertical, rootLayout ? 0 : 7)
-        .liquidGlass(in: Capsule(), interactive: true)
+        .liquidGlass(in: Capsule(), interactive: false)
     }
 }
 
@@ -131,9 +139,11 @@ struct NetflixCategoryPillStrip: View {
             .foregroundStyle(palette.textPrimary)
             .padding(.horizontal, 13)
             .padding(.vertical, 7)
+            .contentShape(Capsule())
             .liquidGlass(in: Capsule(), interactive: true)
         }
         .buttonStyle(.plain)
+        .contentShape(Capsule())
     }
 }
 

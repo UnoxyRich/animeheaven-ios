@@ -119,6 +119,75 @@ final class AnimeHeavenUITests: XCTestCase {
     }
 
     @MainActor
+    func testNavBarHitTestingDoesNotPassThroughToUnderlyingCards() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["-UITestDisableAutoScroll"]
+        app.launch()
+
+        let scheduleTab = app.buttons["tab.schedule"]
+        let newTab = app.buttons["tab.new"]
+        let popularTab = app.buttons["tab.popular"]
+        XCTAssertTrue(scheduleTab.waitForExistence(timeout: 15), "Schedule tab should appear on launch")
+
+        // Switch to New Releases so scrollable anime cards fill the screen behind both bars.
+        newTab.tap()
+        XCTAssertTrue(app.staticTexts["Latest Releases"].waitForExistence(timeout: 15), "New Releases catalog should load")
+
+        // Scroll slightly so anime rows sit directly beneath both top and bottom navigation chrome.
+        let scrollStart = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.65))
+        let scrollEnd = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+        scrollStart.press(forDuration: 0.05, thenDragTo: scrollEnd)
+        sleep(1)
+
+        // 1. Off-center corner tap on an unselected bottom tab must switch tabs, not open a card underneath.
+        popularTab.coordinate(withNormalizedOffset: CGVector(dx: 0.12, dy: 0.18)).tap()
+        XCTAssertTrue(app.staticTexts["Ranked by Views"].waitForExistence(timeout: 15), "Off-center tap on Popular tab should switch to Popular")
+        XCTAssertTrue(popularTab.exists && popularTab.isSelected, "Popular tab should remain visible and selected")
+
+        scrollStart.press(forDuration: 0.05, thenDragTo: scrollEnd)
+        sleep(1)
+
+        // 2. Off-center opposite corner tap on New tab must switch back cleanly.
+        newTab.coordinate(withNormalizedOffset: CGVector(dx: 0.88, dy: 0.82)).tap()
+        let newSelected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "selected == true"), object: newTab)
+        XCTAssertEqual(XCTWaiter.wait(for: [newSelected], timeout: 10), .completed, "Off-center tap on New tab should switch back to New")
+        XCTAssertTrue(newTab.exists, "Bottom nav bar must stay visible instead of pushing an underlying anime")
+
+        // 3. Stray taps in bottom bar chrome margins directly over anime cards must be absorbed.
+        let appOrigin = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
+        let topFadePoint = CGVector(
+            dx: newTab.frame.midX - app.frame.minX,
+            dy: newTab.frame.minY - 5 - app.frame.minY
+        )
+        let bottomMarginPoint = CGVector(
+            dx: popularTab.frame.midX - app.frame.minX,
+            dy: min(app.frame.maxY - 2, popularTab.frame.maxY + 4) - app.frame.minY
+        )
+        appOrigin.withOffset(topFadePoint).tap()
+        appOrigin.withOffset(bottomMarginPoint).tap()
+        sleep(1)
+        XCTAssertTrue(newTab.exists && newTab.isSelected, "Taps on bottom nav bar margins must not open items beneath the bar")
+
+        // 4. Stray taps on the top navigation bar over scrolled anime cards must be absorbed.
+        let topTitle = app.staticTexts["topbar.title"].firstMatch
+        let searchBtn = app.buttons["topbar.search"].firstMatch
+        XCTAssertTrue(topTitle.waitForExistence(timeout: 5))
+        XCTAssertTrue(searchBtn.waitForExistence(timeout: 5))
+        topTitle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let topSpacerPoint = CGVector(
+            dx: (topTitle.frame.maxX + searchBtn.frame.minX) * 0.5 - app.frame.minX,
+            dy: topTitle.frame.midY - app.frame.minY
+        )
+        appOrigin.withOffset(topSpacerPoint).tap()
+        sleep(1)
+        XCTAssertTrue(newTab.exists && newTab.isSelected, "Taps on top nav bar background must not open items beneath the bar")
+
+        // 5. Off-center tap inside a top nav bar action button must still respond immediately.
+        searchBtn.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.25)).tap()
+        XCTAssertTrue(app.navigationBars["Search"].waitForExistence(timeout: 10), "Off-center tap on Search action button should open Search")
+    }
+
+    @MainActor
     private func waitForArtwork(in app: XCUIApplication, screen: String) {
         let artwork = app.descendants(matching: .any)["walkthrough.\(screen).artwork"].firstMatch
         XCTAssertTrue(artwork.waitForExistence(timeout: 10))
