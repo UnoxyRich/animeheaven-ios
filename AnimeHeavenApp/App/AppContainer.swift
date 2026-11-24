@@ -66,21 +66,30 @@ public final class AppContainer {
         return ImageCacheManager(diskDirectory: imgDir)
     }()
 
-    public lazy var preloader: AnimePreloader = {
-        let imgCache = self.imageCacheManager
-        return AnimePreloader(
+    private var _preloader: AnimePreloader?
+    public var preloader: AnimePreloader {
+        if let existing = _preloader { return existing }
+        let created = AnimePreloader(
             repository: repository,
             skipTimesClient: skipTimesClient,
             chunkBooster: chunkBooster,
             networkPolicy: networkPolicy,
-            imagePreloadHandler: { urls, targetSize in
-                await imgCache.preload(urls: urls, targetSize: targetSize)
-            }
+            imagePreloadHandler: Self.makeImagePreloadHandler(cache: imageCacheManager)
         )
-    }()
+        _preloader = created
+        return created
+    }
 
-    public init(settingsStore: SettingsStore = SettingsStore()) {
-        self.settingsStore = settingsStore
+    private nonisolated static func makeImagePreloadHandler(
+        cache: ImageCacheManager
+    ) -> AnimePreloader.ImagePreloadHandler {
+        { urls, targetSize in
+            await cache.preload(urls: urls, targetSize: targetSize)
+        }
+    }
+
+    public init(settingsStore: SettingsStore? = nil) {
+        self.settingsStore = settingsStore ?? SettingsStore()
         let fm = FileManager.default
         self.cachesDir = fm.urls(for: .cachesDirectory, in: .userDomainMask).first
             ?? fm.temporaryDirectory
