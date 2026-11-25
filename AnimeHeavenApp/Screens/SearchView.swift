@@ -36,6 +36,7 @@ struct SearchView: View {
                     .submitLabel(.search)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+                    .accessibilityIdentifier("search.input")
                     .foregroundStyle(palette.textPrimary)
                     .onSubmit {
                         searchFocused = false

@@ -50,7 +50,7 @@ final class AnimeHeavenUITests: XCTestCase {
         XCTAssertTrue(searchBtn.waitForExistence(timeout: 10), "Search button should be visible")
         searchBtn.tap()
         XCTAssertTrue(app.navigationBars["Search"].waitForExistence(timeout: 10), "Search screen should open")
-        let searchField = app.textFields["Search anime titles..."]
+        let searchField = app.textFields["search.input"]
         XCTAssertTrue(searchField.waitForExistence(timeout: 5), "Search field should exist")
         searchField.tap()
         let keyboardContinue = app.buttons["Continue"]
