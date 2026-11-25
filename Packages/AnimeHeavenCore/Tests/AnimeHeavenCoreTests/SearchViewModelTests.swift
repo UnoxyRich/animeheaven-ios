@@ -17,6 +17,48 @@ private actor FakeSearchGateway: SearchGateway {
         )
     }
 
+    func fastSearchMultilingual(
+        query: String,
+        forcedCandidate: String?
+    ) async throws -> MultilingualFastSearchResult {
+        if query == "葬送的芙莉莲" && forcedCandidate == nil {
+            return MultilingualFastSearchResult(
+                items: [FastSearchItem(animeId: "ak2gr", title: "Sousou no Frieren", coverUrl: "https://example.com/f.jpg")],
+                matchedQuery: "Sousou no Frieren",
+                candidateQueries: ["Sousou no Frieren", "Frieren: Beyond Journey's End"]
+            )
+        }
+        return MultilingualFastSearchResult(
+            items: try await fastSearch(query: forcedCandidate ?? query),
+            matchedQuery: forcedCandidate,
+            candidateQueries: forcedCandidate.map { [$0] } ?? []
+        )
+    }
+
+    func fullSearchMultilingual(
+        query: String,
+        forcedCandidate: String?
+    ) async throws -> MultilingualFullSearchResult {
+        if forcedCandidate == nil {
+            recent.insert(query, at: 0)
+        }
+        if query == "葬送的芙莉莲" {
+            let effective = forcedCandidate ?? "Sousou no Frieren"
+            return MultilingualFullSearchResult(
+                title: "Results for \"\(effective)\"",
+                items: [AnimeCard(id: "ak2gr", title: "Full: \(effective)")],
+                matchedQuery: effective,
+                candidateQueries: ["Sousou no Frieren", "Frieren: Beyond Journey's End"]
+            )
+        }
+        let effective = forcedCandidate ?? query
+        return MultilingualFullSearchResult(
+            title: "Search: \(effective)",
+            items: [AnimeCard(id: "id1", title: "Full: \(effective)")],
+            matchedQuery: forcedCandidate
+        )
+    }
+
     func getRecentSearches() async -> [String] { recent }
 
     func deleteRecentSearch(query: String) async {
@@ -54,5 +96,23 @@ struct SearchViewModelTests {
         #expect(vm.isFullSearchMode)
         #expect(vm.fastResults.isEmpty)
         #expect(vm.fullResults.map(\.title) == ["Full: frieren"])
+    }
+
+    @Test @MainActor func multilingualSearchPreservesQueryAndSwitchesCandidate() async {
+        let vm = SearchViewModel(gateway: FakeSearchGateway(), debounceMs: 10)
+        vm.onQueryChanged("葬送的芙莉莲")
+        await vm.waitForCurrentSearch()
+        #expect(vm.matchedQuery == "Sousou no Frieren")
+        #expect(vm.candidateQueries == ["Sousou no Frieren", "Frieren: Beyond Journey's End"])
+
+        vm.submitFullSearch()
+        await vm.waitForCurrentSearch()
+        #expect(vm.recentSearches.first == "葬送的芙莉莲")
+
+        vm.selectCandidateQuery("Frieren: Beyond Journey's End")
+        await vm.waitForCurrentSearch()
+        #expect(vm.query == "葬送的芙莉莲")
+        #expect(vm.matchedQuery == "Frieren: Beyond Journey's End")
+        #expect(vm.fullResults.map(\.title) == ["Full: Frieren: Beyond Journey's End"])
     }
 }

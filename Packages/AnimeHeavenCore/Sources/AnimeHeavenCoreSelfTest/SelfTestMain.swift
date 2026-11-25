@@ -304,8 +304,12 @@ struct AnimeHeavenCoreSelfTestMain {
                 let s1 = SettingsStore(defaults: defaults)
                 s1.themeId = .darkMagenta
                 s1.doubleTapSeekSeconds = 15
+                s1.multilingualSearchEnabled = false
                 let s2 = SettingsStore(defaults: defaults)
-                try check(s2.themeId == .darkMagenta && s2.doubleTapSeekSeconds == 15, "SettingsStore persistence")
+                try check(
+                    s2.themeId == .darkMagenta && s2.doubleTapSeekSeconds == 15 && !s2.multilingualSearchEnabled,
+                    "SettingsStore persistence"
+                )
             }
 
             let vm = await MainActor.run { SearchViewModel(gateway: SelfTestGateway(), debounceMs: 10) }
@@ -318,6 +322,35 @@ struct AnimeHeavenCoreSelfTestMain {
             try await Task.sleep(for: .milliseconds(60))
             let fullTitle = await MainActor.run { vm.fullResults.first?.title }
             try check(fullTitle == "Full: bleach", "full search mismatch: \(String(describing: fullTitle))")
+            await MainActor.run { vm.selectCandidateQuery("Bleach: Thousand-Year Blood War") }
+            try await Task.sleep(for: .milliseconds(60))
+            let switchedTitle = await MainActor.run { vm.fullResults.first?.title }
+            let matched = await MainActor.run { vm.matchedQuery }
+            try check(
+                matched == "Bleach: Thousand-Year Blood War" && switchedTitle == "Full: Bleach: Thousand-Year Blood War",
+                "candidate switch mismatch: \(String(describing: switchedTitle))"
+            )
+        }
+
+        await run("MultilingualQueryNormalizer: script detection, Kana->Romaji & variants") {
+            let cn = MultilingualQueryNormalizer.analyze("葬送的芙莉莲")
+            try check(cn.script == .hanCJK && cn.wikidataLangHint == "zh", "cn script mismatch")
+            let jp = MultilingualQueryNormalizer.analyze("葬送のフリーレン")
+            try check(jp.script == .hanCJK && jp.wikidataLangHint == "ja", "jp script mismatch")
+            let ko = MultilingualQueryNormalizer.analyze("진격의 거인")
+            try check(ko.script == .otherNonLatin && ko.wikidataLangHint == "ko", "ko script mismatch")
+            let ru = MultilingualQueryNormalizer.analyze("Атака титанов")
+            try check(ru.script == .otherNonLatin && ru.wikidataLangHint == "ru", "ru script mismatch")
+            let kana = MultilingualQueryNormalizer.analyze("しんげき の きょじん")
+            try check(kana.script == .kanaOnly && kana.kanaRomajiCandidates.contains("shingeki no kyojin"), "kana romaji mismatch")
+            let macron = MultilingualQueryNormalizer.analyze("Sōsō no Furīren")
+            try check(macron.normalizedLatin == "Soso no Furiren" && macron.romajiVariants.contains("sousou no furiren"), "macron/variant mismatch")
+            let soma = MultilingualQueryNormalizer.generateRomajiVariants("Shokugeki no Soma")
+            try check(soma.contains("shokugeki no souma"), "soma variant mismatch: \(soma)")
+            let deduped = MultilingualQueryNormalizer.rankAndDedupe([
+                "葬送のフリーレン", "Sousou no Frieren", "sousou no frieren!", "Frieren: Beyond Journey’s End"
+            ])
+            try check(deduped == ["Sousou no Frieren", "Frieren: Beyond Journey's End"], "dedupe mismatch: \(deduped)")
         }
 
         await run("Mp4MoovSeekParser: faststart VBR & non-faststart tail moov + EpisodeVideoIndex") {

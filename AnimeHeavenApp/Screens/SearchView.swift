@@ -28,7 +28,7 @@ struct SearchView: View {
                 HStack(spacing: 10) {
                     Image(systemName: "magnifyingglass")
                         .foregroundStyle(palette.textMuted)
-                    TextField("Search anime titles...", text: Binding(
+                    TextField("Search English, Romaji, 日本語, 中文...", text: Binding(
                         get: { viewModel.query },
                         set: { viewModel.onQueryChanged($0) }
                     ))
@@ -58,6 +58,8 @@ struct SearchView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
 
+                matchedCandidateBar
+
                 contentBody
             }
         }
@@ -67,6 +69,57 @@ struct SearchView: View {
             await viewModel.loadRecentSearches()
             searchFocused = true
         }
+    }
+
+    @ViewBuilder
+    private var matchedCandidateBar: some View {
+        let chips = resolvedCandidateChips
+        if !chips.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    Text("Matched:")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(palette.textMuted)
+                    ForEach(chips, id: \.self) { candidate in
+                        let isSelected = candidate == viewModel.matchedQuery
+                        Button {
+                            searchFocused = false
+                            viewModel.selectCandidateQuery(candidate)
+                        } label: {
+                            Text(candidate)
+                                .font(.caption.weight(isSelected ? .bold : .medium))
+                                .foregroundStyle(isSelected ? .white : palette.textSecondary)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(
+                                    isSelected ? palette.crimson : palette.surfaceElevated,
+                                    in: Capsule()
+                                )
+                                .overlay(
+                                    Capsule().stroke(
+                                        isSelected ? palette.crimson : palette.borderSubtle,
+                                        lineWidth: 1
+                                    )
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 8)
+            }
+        }
+    }
+
+    private var resolvedCandidateChips: [String] {
+        var out: [String] = []
+        if let matched = viewModel.matchedQuery, !matched.isEmpty {
+            out.append(matched)
+        }
+        for candidate in viewModel.candidateQueries where !out.contains(candidate) {
+            out.append(candidate)
+        }
+        return out
     }
 
     @ViewBuilder

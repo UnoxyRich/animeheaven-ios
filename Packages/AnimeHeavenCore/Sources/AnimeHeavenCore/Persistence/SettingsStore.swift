@@ -10,6 +10,7 @@ public struct AppSettings: Sendable, Equatable {
     public var doubleTapSeekSeconds: Int
     public var autoLandscapePlayer: Bool
     public var preloadMode: PreloadMode
+    public var multilingualSearchEnabled: Bool
 
     public init(
         themeId: AhThemeId = .dark,
@@ -19,7 +20,8 @@ public struct AppSettings: Sendable, Equatable {
         skipPromptEnabled: Bool = true,
         doubleTapSeekSeconds: Int = 10,
         autoLandscapePlayer: Bool = true,
-        preloadMode: PreloadMode = .aggressive
+        preloadMode: PreloadMode = .aggressive,
+        multilingualSearchEnabled: Bool = true
     ) {
         self.themeId = themeId
         self.defaultViewMode = defaultViewMode
@@ -29,24 +31,25 @@ public struct AppSettings: Sendable, Equatable {
         self.doubleTapSeekSeconds = doubleTapSeekSeconds
         self.autoLandscapePlayer = autoLandscapePlayer
         self.preloadMode = preloadMode
+        self.multilingualSearchEnabled = multilingualSearchEnabled
     }
 }
 
-private final class LockedPreloadModeBox: @unchecked Sendable {
+private final class LockedValueBox<T: Sendable>: @unchecked Sendable {
     private let lock = NSLock()
-    private var value: PreloadMode
+    private var value: T
 
-    init(_ initial: PreloadMode) {
+    init(_ initial: T) {
         self.value = initial
     }
 
-    func get() -> PreloadMode {
+    func get() -> T {
         lock.lock()
         defer { lock.unlock() }
         return value
     }
 
-    func set(_ newValue: PreloadMode) {
+    func set(_ newValue: T) {
         lock.lock()
         value = newValue
         lock.unlock()
@@ -65,12 +68,15 @@ public final class SettingsStore {
         static let doubleTapSeekSeconds = "ah_double_tap_seek_seconds"
         static let autoLandscapePlayer = "ah_auto_landscape_player"
         static let preloadMode = "ah_preload_mode"
+        static let multilingualSearchEnabled = "ah_multilingual_search_enabled"
     }
 
     @ObservationIgnored
     private let defaults: UserDefaults
     @ObservationIgnored
-    private nonisolated let preloadModeBox: LockedPreloadModeBox
+    private nonisolated let preloadModeBox: LockedValueBox<PreloadMode>
+    @ObservationIgnored
+    private nonisolated let multilingualSearchBox: LockedValueBox<Bool>
 
     public var themeId: AhThemeId {
         didSet {
@@ -129,6 +135,14 @@ public final class SettingsStore {
         }
     }
 
+    public var multilingualSearchEnabled: Bool {
+        didSet {
+            guard multilingualSearchEnabled != oldValue else { return }
+            defaults.set(multilingualSearchEnabled, forKey: Keys.multilingualSearchEnabled)
+            multilingualSearchBox.set(multilingualSearchEnabled)
+        }
+    }
+
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         let loadedTheme = AhThemeId.fromCssKey(defaults.string(forKey: Keys.theme))
@@ -141,6 +155,7 @@ public final class SettingsStore {
         let loadedAutoLandscape = defaults.object(forKey: Keys.autoLandscapePlayer) as? Bool ?? true
         let loadedPreload = defaults.string(forKey: Keys.preloadMode)
             .flatMap(PreloadMode.init(rawValue:)) ?? .aggressive
+        let loadedMultilingual = defaults.object(forKey: Keys.multilingualSearchEnabled) as? Bool ?? true
 
         self.themeId = loadedTheme
         self.defaultViewMode = loadedViewMode
@@ -150,7 +165,9 @@ public final class SettingsStore {
         self.doubleTapSeekSeconds = loadedDoubleTap
         self.autoLandscapePlayer = loadedAutoLandscape
         self.preloadMode = loadedPreload
-        self.preloadModeBox = LockedPreloadModeBox(loadedPreload)
+        self.multilingualSearchEnabled = loadedMultilingual
+        self.preloadModeBox = LockedValueBox(loadedPreload)
+        self.multilingualSearchBox = LockedValueBox(loadedMultilingual)
     }
 
     public var snapshot: AppSettings {
@@ -162,11 +179,16 @@ public final class SettingsStore {
             skipPromptEnabled: skipPromptEnabled,
             doubleTapSeekSeconds: doubleTapSeekSeconds,
             autoLandscapePlayer: autoLandscapePlayer,
-            preloadMode: preloadMode
+            preloadMode: preloadMode,
+            multilingualSearchEnabled: multilingualSearchEnabled
         )
     }
 
     public nonisolated func currentPreloadModeNonisolated() -> PreloadMode {
         preloadModeBox.get()
+    }
+
+    public nonisolated func currentMultilingualSearchEnabledNonisolated() -> Bool {
+        multilingualSearchBox.get()
     }
 }

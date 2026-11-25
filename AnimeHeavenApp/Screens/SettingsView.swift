@@ -101,6 +101,19 @@ struct SettingsView: View {
                 .listRowBackground(palette.surface)
                 .listRowSeparatorTint(palette.borderSubtle)
 
+                Section("Search & Discovery") {
+                    Toggle("Smart Multi-Language Search", isOn: Binding(
+                        get: { settings.multilingualSearchEnabled },
+                        set: { settings.multilingualSearchEnabled = $0 }
+                    ))
+                    .tint(palette.crimson)
+                    Text("Automatically resolves Japanese, Chinese, Korean, Romaji variants, and other languages.")
+                        .font(.caption)
+                        .foregroundStyle(palette.textMuted)
+                }
+                .listRowBackground(palette.surface)
+                .listRowSeparatorTint(palette.borderSubtle)
+
                 Section("Preloading & Network") {
                     Picker("Preload Mode", selection: Binding(
                         get: { settings.preloadMode },

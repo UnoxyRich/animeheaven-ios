@@ -77,6 +77,8 @@ public actor AnimeHeavenRepository {
     private let client: AnimeHeavenClient
     public let database: SQLiteDatabase
     private let snapshotDirectory: URL?
+    private let multilingualResolver: MultilingualSearchResolver?
+    private let multilingualSearchEnabled: @Sendable () -> Bool
     private let coalescer = RequestCoalescer<String>()
 
     private var cachedHome: CachedEntry<HomeFeed>?
@@ -97,11 +99,15 @@ public actor AnimeHeavenRepository {
     public init(
         client: AnimeHeavenClient,
         database: SQLiteDatabase,
-        snapshotDirectory: URL? = nil
+        snapshotDirectory: URL? = nil,
+        multilingualResolver: MultilingualSearchResolver? = nil,
+        multilingualSearchEnabled: @escaping @Sendable () -> Bool = { true }
     ) {
         self.client = client
         self.database = database
         self.snapshotDirectory = snapshotDirectory
+        self.multilingualResolver = multilingualResolver
+        self.multilingualSearchEnabled = multilingualSearchEnabled
     }
 
     public func seasonHeader() -> (path: String?, label: String?) {
@@ -407,8 +413,62 @@ public actor AnimeHeavenRepository {
     // MARK: - Search & Random
 
     public func fastSearch(query: String) async throws -> [FastSearchItem] {
+        try await fastSearchMultilingual(query: query).items
+    }
+
+    public func fullSearch(query: String) async throws -> ChartFeedResult {
+        let res = try await fullSearchMultilingual(query: query)
+        return ChartFeedResult(title: res.title, items: res.items)
+    }
+
+    public func fastSearchMultilingual(
+        query: String,
+        forcedCandidate: String? = nil
+    ) async throws -> MultilingualFastSearchResult {
+        let outcome = try await executeMultilingualSearch(
+            rawQuery: query,
+            forcedCandidate: forcedCandidate,
+            directSearch: { [self] q in try await self.fastSearchDirect(query: q) },
+            itemId: \.animeId,
+            mapLocalCard: {
+                FastSearchItem(animeId: $0.id, title: $0.title, coverUrl: $0.coverUrl)
+            }
+        )
+        return MultilingualFastSearchResult(
+            items: outcome.items,
+            matchedQuery: outcome.matchedQuery,
+            candidateQueries: outcome.candidateQueries
+        )
+    }
+
+    public func fullSearchMultilingual(
+        query: String,
+        forcedCandidate: String? = nil
+    ) async throws -> MultilingualFullSearchResult {
         let cleaned = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard cleaned.count >= 2 else { return [] }
+        guard !cleaned.isEmpty else { return MultilingualFullSearchResult(title: "Search", items: []) }
+        if forcedCandidate == nil {
+            await database.upsertSearchHistory(query: cleaned, searchedAt: currentTimeMs())
+        }
+        let outcome = try await executeMultilingualSearch(
+            rawQuery: cleaned,
+            forcedCandidate: forcedCandidate,
+            directSearch: { [self] q in try await self.fullSearchDirect(query: q).items },
+            itemId: \.id,
+            mapLocalCard: { $0 }
+        )
+        let title = outcome.matchedQuery.map { "Results for \"\($0)\"" } ?? "Results for \"\(cleaned)\""
+        return MultilingualFullSearchResult(
+            title: title,
+            items: outcome.items,
+            matchedQuery: outcome.matchedQuery,
+            candidateQueries: outcome.candidateQueries
+        )
+    }
+
+    private func fastSearchDirect(query: String) async throws -> [FastSearchItem] {
+        let cleaned = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else { return [] }
         let key = cleaned.lowercased()
         if let mem = cachedFastSearch.get(key), !mem.isStale(softTTLMs: Self.ttlSearchMs) {
             return mem.value
@@ -421,10 +481,9 @@ public actor AnimeHeavenRepository {
         return items
     }
 
-    public func fullSearch(query: String) async throws -> ChartFeedResult {
+    private func fullSearchDirect(query: String) async throws -> ChartFeedResult {
         let cleaned = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else { return ChartFeedResult(title: "Search", items: []) }
-        await database.upsertSearchHistory(query: cleaned, searchedAt: currentTimeMs())
         let encoded = AnimeHeavenClient.urlQueryEncode(cleaned)
         let result = try await getGridFeed(
             cacheKey: "search:\(cleaned.lowercased())",
@@ -432,6 +491,170 @@ public actor AnimeHeavenRepository {
             softTTLMs: Self.ttlSearchMs
         )
         return result.result
+    }
+
+    private func executeMultilingualSearch<T: Sendable>(
+        rawQuery: String,
+        forcedCandidate: String?,
+        directSearch: @escaping @Sendable (String) async throws -> [T],
+        itemId: @Sendable (T) -> String,
+        mapLocalCard: (AnimeCard) -> T
+    ) async throws -> (items: [T], matchedQuery: String?, candidateQueries: [String]) {
+        let trimmed = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return ([], nil, []) }
+
+        if let forced = forcedCandidate?.trimmingCharacters(in: .whitespacesAndNewlines), !forced.isEmpty {
+            let direct = try await directSearch(forced)
+            return (direct, forced, [forced])
+        }
+
+        let analyzed = MultilingualQueryNormalizer.analyze(trimmed)
+        if !multilingualSearchEnabled() {
+            let directTarget = analyzed.normalizedLatin.isEmpty ? trimmed : analyzed.normalizedLatin
+            do {
+                let items = try await directSearch(directTarget)
+                if !items.isEmpty { return (items, nil, []) }
+                return (searchLocalCatalogCards([trimmed, directTarget]).map(mapLocalCard), nil, [])
+            } catch {
+                let local = searchLocalCatalogCards([trimmed, directTarget]).map(mapLocalCard)
+                if !local.isEmpty { return (local, nil, []) }
+                throw error
+            }
+        }
+
+        // Fast path for Latin / English / exact Romaji
+        if analyzed.script == .latin {
+            let siteQuery = analyzed.normalizedLatin.isEmpty ? trimmed : analyzed.normalizedLatin
+            var directError: Error?
+            var directItems: [T] = []
+            do {
+                directItems = try await directSearch(siteQuery)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                directError = error
+            }
+            if !directItems.isEmpty {
+                return (directItems, nil, [])
+            }
+            if directError != nil {
+                let local = searchLocalCatalogCards([trimmed, siteQuery] + analyzed.romajiVariants).map(mapLocalCard)
+                if !local.isEmpty { return (local, nil, []) }
+            }
+        }
+
+        // Fast path for pure Japanese Kana via deterministic Kana -> Hepburn Romaji
+        var localNeedles = [trimmed, analyzed.normalizedLatin]
+        if analyzed.script == .kanaOnly, let primaryRomaji = analyzed.kanaRomajiCandidates.first {
+            localNeedles.append(contentsOf: analyzed.kanaRomajiCandidates)
+            if let kanaDirect = try? await directSearch(primaryRomaji), !kanaDirect.isEmpty {
+                return (kanaDirect, primaryRomaji, analyzed.kanaRomajiCandidates)
+            }
+        }
+
+        let resolved = await resolveAllCandidates(for: analyzed)
+        localNeedles.append(contentsOf: resolved)
+
+        if !resolved.isEmpty {
+            let topQueries = Array(resolved.prefix(2))
+            var outcomes: [(String, Result<[T], Error>)] = []
+            await withTaskGroup(of: (Int, String, Result<[T], Error>).self) { group in
+                for (idx, candidate) in topQueries.enumerated() {
+                    group.addTask {
+                        do {
+                            let items = try await directSearch(candidate)
+                            return (idx, candidate, .success(items))
+                        } catch {
+                            return (idx, candidate, .failure(error))
+                        }
+                    }
+                }
+                var indexed: [(Int, String, Result<[T], Error>)] = []
+                for await res in group { indexed.append(res) }
+                outcomes = indexed.sorted { $0.0 < $1.0 }.map { ($0.1, $0.2) }
+            }
+
+            var merged: [T] = []
+            var seenIds = Set<String>()
+            var winningQuery: String?
+            var anySucceeded = false
+            var firstFailure: Error?
+
+            for (candidate, result) in outcomes {
+                switch result {
+                case .success(let list):
+                    anySucceeded = true
+                    if !list.isEmpty && winningQuery == nil {
+                        winningQuery = candidate
+                    }
+                    for item in list {
+                        if seenIds.insert(itemId(item)).inserted {
+                            merged.append(item)
+                        }
+                    }
+                case .failure(let error):
+                    if firstFailure == nil { firstFailure = error }
+                }
+            }
+
+            if !merged.isEmpty {
+                return (merged, winningQuery, resolved)
+            }
+            if !anySucceeded, let firstFailure {
+                if firstFailure is CancellationError { throw firstFailure }
+                let local = searchLocalCatalogCards(localNeedles).map(mapLocalCard)
+                if !local.isEmpty { return (local, resolved.first, resolved) }
+                throw firstFailure
+            }
+        }
+
+        return (searchLocalCatalogCards(localNeedles).map(mapLocalCard), resolved.first, resolved)
+    }
+
+    private func resolveAllCandidates(for analyzed: AnalyzedQuery) async -> [String] {
+        let external = await multilingualResolver?.resolveCandidates(for: analyzed) ?? []
+        let combined = analyzed.kanaRomajiCandidates + external + analyzed.romajiVariants
+        return MultilingualQueryNormalizer.rankAndDedupe(combined, excludeQuery: analyzed.normalizedLatin)
+    }
+
+    private func searchLocalCatalogCards(_ rawNeedles: [String]) -> [AnimeCard] {
+        var seenNeedles = Set<String>()
+        let needles = rawNeedles
+            .map(MultilingualQueryNormalizer.normalizeForMatch)
+            .filter { $0.count >= 2 && seenNeedles.insert($0).inserted }
+        guard !needles.isEmpty else { return [] }
+
+        var seenIds = Set<String>()
+        var matches: [AnimeCard] = []
+
+        func consider(_ card: AnimeCard) {
+            guard !seenIds.contains(card.id) else { return }
+            let en = MultilingualQueryNormalizer.normalizeForMatch(card.title)
+            let jp = MultilingualQueryNormalizer.normalizeForMatch(card.japaneseTitle)
+            if needles.contains(where: { en.contains($0) || (!jp.isEmpty && jp.contains($0)) }) {
+                seenIds.insert(card.id)
+                matches.append(card)
+            }
+        }
+
+        if let home = cachedHome?.value {
+            home.scheduleItems.forEach(consider)
+            home.popularItems.forEach(consider)
+        }
+        for entry in cachedCharts.allValues() {
+            entry.value.items.forEach(consider)
+        }
+        for entry in cachedDetails.allValues() {
+            let d = entry.value
+            consider(AnimeCard(
+                id: d.id,
+                title: d.title,
+                japaneseTitle: d.japaneseTitle,
+                coverUrl: d.posterUrl,
+                episodeLabel: d.episodesLabel
+            ))
+        }
+        return Array(matches.prefix(30))
     }
 
     public func getRandomAnimeId() async throws -> String {
@@ -583,6 +806,7 @@ public actor AnimeHeavenRepository {
         cachedDetails.clear()
         cachedStreams.clear()
         cachedFastSearch.clear()
+        await multilingualResolver?.onCacheCleared()
         await database.clearWebCache()
         if let url = snapshotFileURL() {
             try? FileManager.default.removeItem(at: url)
@@ -593,6 +817,9 @@ public actor AnimeHeavenRepository {
         cachedFastSearch.clear()
         cachedCharts.clear()
         cachedGrids.clear()
+        if let resolver = multilingualResolver {
+            Task { await resolver.trimMemory() }
+        }
         if aggressive {
             cachedDetails.clear()
             cachedStreams.clear()

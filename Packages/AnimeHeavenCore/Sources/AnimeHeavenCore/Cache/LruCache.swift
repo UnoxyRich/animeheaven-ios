@@ -88,6 +88,12 @@ public final class LruCache<Key: Hashable & Sendable, Value: Sendable>: @uncheck
         return Array(map.keys)
     }
 
+    public func allValues() -> [Value] {
+        lock.lock()
+        defer { lock.unlock() }
+        return map.values.map(\.value)
+    }
+
     private func insertAtHead(_ node: Node) {
         node.prev = nil
         node.next = head

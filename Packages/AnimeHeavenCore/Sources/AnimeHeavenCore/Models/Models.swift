@@ -232,6 +232,41 @@ public struct FastSearchItem: Codable, Sendable, Hashable, Identifiable {
     }
 }
 
+public struct MultilingualFastSearchResult: Sendable, Hashable {
+    public let items: [FastSearchItem]
+    public let matchedQuery: String?
+    public let candidateQueries: [String]
+
+    public init(
+        items: [FastSearchItem],
+        matchedQuery: String? = nil,
+        candidateQueries: [String] = []
+    ) {
+        self.items = items
+        self.matchedQuery = matchedQuery
+        self.candidateQueries = candidateQueries
+    }
+}
+
+public struct MultilingualFullSearchResult: Sendable, Hashable {
+    public let title: String
+    public let items: [AnimeCard]
+    public let matchedQuery: String?
+    public let candidateQueries: [String]
+
+    public init(
+        title: String,
+        items: [AnimeCard],
+        matchedQuery: String? = nil,
+        candidateQueries: [String] = []
+    ) {
+        self.title = title
+        self.items = items
+        self.matchedQuery = matchedQuery
+        self.candidateQueries = candidateQueries
+    }
+}
+
 public struct EpisodeItem: Codable, Sendable, Hashable, Identifiable {
     public var id: String { key }
     public let key: String

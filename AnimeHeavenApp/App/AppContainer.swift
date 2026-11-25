@@ -31,11 +31,18 @@ public final class AppContainer {
         return NetworkPolicy(preloadModeProvider: { store.currentPreloadModeNonisolated() })
     }()
 
+    lazy var multilingualSearchResolver: MultilingualSearchResolver = {
+        MultilingualSearchResolver(database: database)
+    }()
+
     public lazy var repository: AnimeHeavenRepository = {
-        AnimeHeavenRepository(
+        let store = self.settingsStore
+        return AnimeHeavenRepository(
             client: client,
             database: database,
-            snapshotDirectory: appSupportDir
+            snapshotDirectory: appSupportDir,
+            multilingualResolver: multilingualSearchResolver,
+            multilingualSearchEnabled: { store.currentMultilingualSearchEnabledNonisolated() }
         )
     }()
 
@@ -206,9 +213,11 @@ public final class AppContainer {
         let skip = self.skipTimesClient
         let img = self.imageCacheManager
         let artwork = artworkResolver
+        let multilingual = multilingualSearchResolver
         Task.detached(priority: .utility) {
             await img.clearMemoryCache()
             await artwork.trimMemory()
+            await multilingual.trimMemory()
             await repo.trimMemory(aggressive: true)
             await skip.trimMemory()
         }
