@@ -42,13 +42,31 @@ jobs:
       - name: Select Xcode 26.2
         run: sudo xcode-select --switch /Applications/Xcode_26.2.app/Contents/Developer
 
-      - name: Build unsigned iOS Release
+      - name: Build & package unsigned iOS Release IPA
         run: |
+          rm -rf build/ios-release build/ipa
           xcodebuild build \
             -project AnimeHeaven.xcodeproj \
             -scheme AnimeHeaven -configuration Release \
             -destination 'generic/platform=iOS' \
-            CODE_SIGNING_ALLOWED=NO
+            -derivedDataPath build/ios-release \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
+          APP_PATH="build/ios-release/Build/Products/Release-iphoneos/AnimeHeaven.app"
+          test -d "$APP_PATH"
+          mkdir -p build/ipa/Payload
+          cp -R "$APP_PATH" build/ipa/Payload/
+          rm -rf "build/ipa/Payload/AnimeHeaven.app/_CodeSignature"
+          (cd build/ipa && zip -qr "AnimeHeaven-unsigned.ipa" Payload)
+          ls -lh build/ipa/AnimeHeaven-unsigned.ipa
+
+      - name: Upload Unsigned iOS IPA
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: animeheaven-ios-unsigned-ipa
+          path: build/ipa/AnimeHeaven-unsigned.ipa
+          if-no-files-found: error
 
       - name: Inspect Xcode & ensure iOS Simulator runtime is installed
         run: |
