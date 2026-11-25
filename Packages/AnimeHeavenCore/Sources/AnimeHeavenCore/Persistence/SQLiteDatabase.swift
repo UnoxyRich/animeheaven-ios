@@ -181,6 +181,20 @@ public actor SQLiteDatabase {
         return ids
     }
 
+    public func getOrderedBookmarkIds(limit: Int = 64) -> [String] {
+        guard let db else { return [] }
+        let sql = "SELECT animeId FROM bookmarks ORDER BY addedAt DESC LIMIT ?;"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK, let stmt else { return [] }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_int(stmt, 1, Int32(clamping: max(0, limit)))
+        var ids: [String] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            ids.append(columnString(stmt, 0))
+        }
+        return ids
+    }
+
     public func isBookmarked(animeId: String) -> Bool {
         guard let db else { return false }
         let sql = "SELECT 1 FROM bookmarks WHERE animeId = ? LIMIT 1;"
@@ -270,6 +284,20 @@ public actor SQLiteDatabase {
         defer { sqlite3_finalize(stmt) }
         bindText(stmt, 1, episodeKey)
         return readWatchProgressRows(stmt).first
+    }
+
+    public func getRecentWatchProgress(limit: Int = 128) -> [WatchProgressRecord] {
+        guard let db else { return [] }
+        let sql = """
+            SELECT episodeKey, animeId, animeTitle, coverUrl, episodeLabel,
+                   positionMs, durationMs, isWatched, nextEpisodeKey, nextEpisodeLabel, updatedAt
+            FROM watch_progress ORDER BY updatedAt DESC LIMIT ?;
+        """
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK, let stmt else { return [] }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_int(stmt, 1, Int32(clamping: max(0, limit)))
+        return readWatchProgressRows(stmt)
     }
 
     public func upsertWatchProgress(_ record: WatchProgressRecord) {
@@ -371,17 +399,30 @@ public actor SQLiteDatabase {
         )
     }
 
-    public func getRecentCachedDetails(limit: Int = 12) -> [WebCacheRecord] {
+    public func getRecentCachedDetails(limit: Int = 24) -> [WebCacheRecord] {
+        getRecentWebCacheByPrefix("detail:%", limit: limit)
+    }
+
+    public func getRecentCachedStreams(limit: Int = 48) -> [WebCacheRecord] {
+        getRecentWebCacheByPrefix("gate:%", limit: limit)
+    }
+
+    public func getRecentVideoMeta(limit: Int = 128) -> [WebCacheRecord] {
+        getRecentWebCacheByPrefix("vmeta:%", limit: limit)
+    }
+
+    private func getRecentWebCacheByPrefix(_ pattern: String, limit: Int) -> [WebCacheRecord] {
         guard let db else { return [] }
         let sql = """
             SELECT cacheKey, payload, fetchedAt, parsedJson FROM web_cache
-            WHERE cacheKey LIKE 'detail:%' AND parsedJson IS NOT NULL
+            WHERE cacheKey LIKE ? AND parsedJson IS NOT NULL
             ORDER BY fetchedAt DESC LIMIT ?;
         """
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK, let stmt else { return [] }
         defer { sqlite3_finalize(stmt) }
-        sqlite3_bind_int(stmt, 1, Int32(limit))
+        bindText(stmt, 1, pattern)
+        sqlite3_bind_int(stmt, 2, Int32(clamping: max(0, limit)))
         var out: [WebCacheRecord] = []
         while sqlite3_step(stmt) == SQLITE_ROW {
             out.append(WebCacheRecord(

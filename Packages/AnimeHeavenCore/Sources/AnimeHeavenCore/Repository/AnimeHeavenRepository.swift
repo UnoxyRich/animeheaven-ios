@@ -82,9 +82,11 @@ public actor AnimeHeavenRepository {
     private var cachedHome: CachedEntry<HomeFeed>?
     private let cachedCharts = LruCache<String, CachedEntry<ChartFeedResult>>(maxEntries: 24)
     private let cachedGrids = LruCache<String, CachedEntry<ChartFeedResult>>(maxEntries: 24)
-    private let cachedDetails = LruCache<String, CachedEntry<AnimeDetail>>(maxEntries: 64)
-    private let cachedStreams = LruCache<String, CachedEntry<EpisodeStream>>(maxEntries: 48)
+    private let cachedDetails = LruCache<String, CachedEntry<AnimeDetail>>(maxEntries: 128)
+    private let cachedStreams = LruCache<String, CachedEntry<EpisodeStream>>(maxEntries: 128)
     private let cachedFastSearch = LruCache<String, CachedEntry<[FastSearchItem]>>(maxEntries: 100)
+    private var progressByEpisode: [String: WatchProgressRecord] = [:]
+    private var latestProgressByAnime: [String: WatchProgressRecord] = [:]
 
     private var _seasonHeader: (path: String?, label: String?) = (nil, nil)
 
@@ -108,6 +110,27 @@ public actor AnimeHeavenRepository {
 
     public func peekCachedHomeFeed() -> HomeFeed? {
         cachedHome?.value
+    }
+
+    public func peekCachedDetail(animeId: String) -> AnimeDetail? {
+        cachedDetails.get(animeId)?.value
+    }
+
+    public func peekCachedStream(episodeKey: String) -> EpisodeStream? {
+        cachedStreams.get(episodeKey)?.value
+    }
+
+    public func isCachedStreamStale(episodeKey: String) -> Bool {
+        guard let entry = cachedStreams.get(episodeKey) else { return true }
+        return entry.isStale(softTTLMs: Self.ttlGateMs)
+    }
+
+    public func peekSavedProgress(episodeKey: String) -> WatchProgressRecord? {
+        progressByEpisode[episodeKey]
+    }
+
+    public func peekLatestProgressForAnime(animeId: String) -> WatchProgressRecord? {
+        latestProgressByAnime[animeId]
     }
 
     public func hasFreshDetailInMemory(animeId: String) -> Bool {
@@ -141,7 +164,7 @@ public actor AnimeHeavenRepository {
                 updateSeasonHeader(from: feed)
             }
         }
-        let recentDetails = await database.getRecentCachedDetails(limit: 12)
+        let recentDetails = await database.getRecentCachedDetails(limit: 24)
         for row in recentDetails {
             let animeId = String(row.cacheKey.dropFirst("detail:".count))
             if let json = row.parsedJson?.data(using: .utf8),
@@ -149,8 +172,48 @@ public actor AnimeHeavenRepository {
                 cachedDetails.set(animeId, value: CachedEntry(value: detail, fetchedAt: row.fetchedAt))
             }
         }
+        let recentStreams = await database.getRecentCachedStreams(limit: 48)
+        for row in recentStreams {
+            let epKey = String(row.cacheKey.dropFirst("gate:".count))
+            if let json = row.parsedJson?.data(using: .utf8),
+               let stream = try? decoder.decode(EpisodeStream.self, from: json),
+               !stream.videoSources.isEmpty {
+                cachedStreams.set(epKey, value: CachedEntry(value: stream, fetchedAt: row.fetchedAt))
+            }
+        }
+        let recentProgress = await database.getRecentWatchProgress(limit: 128)
+        for row in recentProgress {
+            progressByEpisode[row.episodeKey] = row
+            if !row.animeId.isEmpty {
+                if let existing = latestProgressByAnime[row.animeId] {
+                    if row.updatedAt >= existing.updatedAt {
+                        latestProgressByAnime[row.animeId] = row
+                    }
+                } else {
+                    latestProgressByAnime[row.animeId] = row
+                }
+            }
+        }
         let continueItems = await getContinueWatching()
         return (cachedHome?.value, continueItems)
+    }
+
+    public func saveEpisodeVideoIndex(_ index: EpisodeVideoIndex) async {
+        guard !index.episodeKey.isEmpty, index.contentLength > 0 else { return }
+        let fetchedAt = index.updatedAtMs > 0 ? index.updatedAtMs : currentTimeMs()
+        persistCodableAsync(cacheKey: "vmeta:\(index.episodeKey)", value: index, fetchedAt: fetchedAt)
+    }
+
+    public func loadRecentVideoIndices(limit: Int = 128) async -> [EpisodeVideoIndex] {
+        let rows = await database.getRecentVideoMeta(limit: limit)
+        return rows.compactMap { row in
+            guard let data = row.parsedJson?.data(using: .utf8) else { return nil }
+            return try? decoder.decode(EpisodeVideoIndex.self, from: data)
+        }
+    }
+
+    public func getOrderedBookmarkIds(limit: Int = 64) async -> [String] {
+        await database.getOrderedBookmarkIds(limit: limit)
     }
 
     // MARK: - Home & Catalogs (Offline-First SWR)
@@ -311,11 +374,22 @@ public actor AnimeHeavenRepository {
         animeId: String?,
         forceRefresh: Bool = false
     ) async throws -> EpisodeStream {
-        if !forceRefresh,
-           let mem = cachedStreams.get(episodeKey),
-           !mem.isStale(softTTLMs: Self.ttlGateMs),
-           !mem.value.videoSources.isEmpty {
-            return mem.value
+        if !forceRefresh {
+            if let mem = cachedStreams.get(episodeKey),
+               !mem.isStale(softTTLMs: Self.ttlGateMs),
+               !mem.value.videoSources.isEmpty {
+                return mem.value
+            }
+            if let row = await database.getWebCache(cacheKey: "gate:\(episodeKey)"),
+               let data = row.parsedJson?.data(using: .utf8),
+               let decoded = try? decoder.decode(EpisodeStream.self, from: data),
+               !decoded.videoSources.isEmpty {
+                let entry = CachedEntry(value: decoded, fetchedAt: row.fetchedAt)
+                cachedStreams.set(episodeKey, value: entry)
+                if !entry.isStale(softTTLMs: Self.ttlGateMs) {
+                    return decoded
+                }
+            }
         }
         let coalesceKey = "gate:\(episodeKey)"
         let html = try await coalescer.getOrFetch(key: coalesceKey) { [client] in
@@ -325,6 +399,7 @@ public actor AnimeHeavenRepository {
         let now = currentTimeMs()
         if !stream.videoSources.isEmpty {
             cachedStreams.set(episodeKey, value: CachedEntry(value: stream, fetchedAt: now))
+            persistCodableAsync(cacheKey: "gate:\(episodeKey)", value: stream, fetchedAt: now)
         }
         return stream
     }
@@ -413,8 +488,22 @@ public actor AnimeHeavenRepository {
         return map
     }
 
+    public func getSavedProgress(episodeKey: String) async -> WatchProgressRecord? {
+        if let mem = progressByEpisode[episodeKey] { return mem }
+        guard let existing = await database.getWatchProgress(episodeKey: episodeKey) else { return nil }
+        progressByEpisode[episodeKey] = existing
+        if !existing.animeId.isEmpty {
+            if let cur = latestProgressByAnime[existing.animeId] {
+                if existing.updatedAt >= cur.updatedAt { latestProgressByAnime[existing.animeId] = existing }
+            } else {
+                latestProgressByAnime[existing.animeId] = existing
+            }
+        }
+        return existing
+    }
+
     public func getResumePositionMs(episodeKey: String) async -> Int64 {
-        guard let existing = await database.getWatchProgress(episodeKey: episodeKey) else { return 0 }
+        guard let existing = await getSavedProgress(episodeKey: episodeKey) else { return 0 }
         return WatchProgressLogic.resolveResumePositionMs(
             positionMs: existing.positionMs,
             durationMs: existing.durationMs
@@ -433,12 +522,12 @@ public actor AnimeHeavenRepository {
         nextEpisodeLabel: String?,
         forceWatched: Bool = false
     ) async {
-        let existing = await database.getWatchProgress(episodeKey: episodeKey)
+        let existing = await getSavedProgress(episodeKey: episodeKey)
         let watched = forceWatched
             || (existing?.isWatched == true)
             || WatchProgressLogic.isEpisodeWatched(positionMs: positionMs, durationMs: durationMs)
 
-        await database.upsertWatchProgress(WatchProgressRecord(
+        let record = WatchProgressRecord(
             episodeKey: episodeKey,
             animeId: animeId,
             animeTitle: animeTitle,
@@ -450,10 +539,15 @@ public actor AnimeHeavenRepository {
             nextEpisodeKey: nextEpisodeKey ?? existing?.nextEpisodeKey,
             nextEpisodeLabel: nextEpisodeLabel ?? existing?.nextEpisodeLabel,
             updatedAt: currentTimeMs()
-        ))
+        )
+        progressByEpisode[episodeKey] = record
+        if !animeId.isEmpty { latestProgressByAnime[animeId] = record }
+        await database.upsertWatchProgress(record)
     }
 
     public func clearWatchHistory() async {
+        progressByEpisode.removeAll()
+        latestProgressByAnime.removeAll()
         await database.clearWatchHistory()
     }
 

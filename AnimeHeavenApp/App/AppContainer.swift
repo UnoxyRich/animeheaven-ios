@@ -78,8 +78,9 @@ public final class AppContainer {
         settingsStore: settingsStore, preloader: preloader)
     lazy var popularViewModel = CatalogViewModel(kind: .popular, repository: repository,
         settingsStore: settingsStore, preloader: preloader)
-    lazy var bookmarksViewModel = BookmarksViewModel(repository: repository)
+    lazy var bookmarksViewModel = BookmarksViewModel(repository: repository, preloader: preloader)
     private var hasStartedWarmup = false
+    private var networkObserverTask: Task<Void, Never>?
 
     private var _preloader: AnimePreloader?
     public var preloader: AnimePreloader {
@@ -135,41 +136,68 @@ public final class AppContainer {
         let preloader = self.preloader
         let tracker = self.mirrorHealthTracker
         let booster = self.chunkBooster
+        let proxy = self.proxyServer
+        let policy = self.networkPolicy
         let images = imageCacheManager
         let artwork = artworkResolver
 
+        networkObserverTask?.cancel()
+        networkObserverTask = Task.detached(priority: .utility) {
+            for await isUnmetered in policy.observeUnmeteredTransitions() {
+                if Task.isCancelled { break }
+                if isUnmetered {
+                    await preloader.onUnmeteredNetworkAvailable()
+                }
+            }
+        }
+
         Task.detached(priority: .utility) {
+            await booster.setVideoIndexPersistence { index in
+                await repository.saveEpisodeVideoIndex(index)
+            }
+
             async let imageWarmup: Void = images.warmUp()
             async let artworkWarmup: Void = artwork.hydrateRecentFromDisk()
-            let learnedHosts = tracker.topHealthyHosts(limit: 2).map { "https://\($0)" }
+            async let videoDiskWarmup: Void = booster.diskCache.warmUp()
+            async let proxyWarmup: UInt16? = try? await proxy.ensureStarted()
+
+            let learnedHosts = tracker.topHealthyHosts(limit: 3).map { "https://\($0)" }
             client.preconnectHosts([AnimeHeavenClient.baseURL] + learnedHosts)
 
             if let fastFeed = await repository.hydrateHomeFast() {
                 await preloader.preloadImages(
                     urls: fastFeed.banners.map(\.bannerImageUrl),
-                    maxCount: 2,
+                    maxCount: 3,
                     targetSize: .heroBanner
                 )
                 await preloader.preloadImages(
                     urls: fastFeed.popularItems.map(\.coverUrl),
-                    maxCount: 6,
+                    maxCount: 8,
                     targetSize: .popularCard
                 )
             }
 
-            let (feed, continueItems) = await repository.warmUpFromDisk()
-            if let feed {
-                await preloader.preloadHomeEcosystem(feed: feed, continueItems: continueItems)
+            await videoDiskWarmup
+            let recentIndices = await repository.loadRecentVideoIndices(limit: 128)
+            await booster.hydrateVideoIndices(recentIndices)
+
+            let (diskFeed, continueItems) = await repository.warmUpFromDisk()
+            let effectiveFeed: HomeFeed?
+            if let diskFeed {
+                effectiveFeed = diskFeed
+            } else {
+                effectiveFeed = try? await repository.getHomeFeed(forceRefresh: false).feed
+            }
+            if let effectiveFeed {
+                await preloader.preloadHomeEcosystem(feed: effectiveFeed, continueItems: continueItems)
             }
 
-            // Warm video cache subsystem off main thread after Frame 1 settles
-            try? await Task.sleep(for: .milliseconds(800))
-            await booster.diskCache.warmUp()
+            _ = await proxyWarmup
+            await imageWarmup
+            await artworkWarmup
 
             try? await Task.sleep(for: .seconds(9))
             await repository.pruneExpiredCache()
-            await imageWarmup
-            await artworkWarmup
         }
     }
 

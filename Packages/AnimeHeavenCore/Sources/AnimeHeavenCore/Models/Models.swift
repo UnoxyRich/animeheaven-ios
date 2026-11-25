@@ -34,9 +34,9 @@ public enum PreloadMode: String, Codable, Sendable, Hashable, CaseIterable {
     public var subtitle: String {
         switch self {
         case .aggressive:
-            return "Preload Home feeds, Bookmarks & up to 8 MB Next Ep video on Wi-Fi (auto-pauses on cellular)"
+            return "Preload Continue Watching, Home, Bookmarks & instant Watch Next (20 MB) on Wi-Fi (off on cellular)"
         case .balanced:
-            return "Preload Home banners, Continue Watching & metadata as you browse"
+            return "Preload Continue Watching, Hero Banner, Detail & 10 MB Watch Next on Wi-Fi (off on cellular)"
         case .dataSaver:
             return "Metadata & thumbnails only • zero background video preloading"
         }

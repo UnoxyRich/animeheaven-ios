@@ -172,11 +172,7 @@ public final class CatalogViewModel {
             if !result.title.isEmpty { self.title = result.title }
             self.items = result.items
             self.isLoading = false
-            await preloader?.preloadImages(
-                urls: result.items.map(\.coverUrl),
-                maxCount: 12,
-                targetSize: .standardCard
-            )
+            await preloader?.preloadCatalogPage(items: result.items)
 
             if isStale && !forceRefresh {
                 isRefreshing = true

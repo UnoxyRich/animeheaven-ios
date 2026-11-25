@@ -10,10 +10,13 @@ public final class BookmarksViewModel {
     @ObservationIgnored
     private let repository: AnimeHeavenRepository
     @ObservationIgnored
+    private let preloader: AnimePreloader?
+    @ObservationIgnored
     private var observerTask: Task<Void, Never>?
 
-    public init(repository: AnimeHeavenRepository) {
+    public init(repository: AnimeHeavenRepository, preloader: AnimePreloader? = nil) {
         self.repository = repository
+        self.preloader = preloader
     }
     deinit { observerTask?.cancel() }
 
@@ -42,6 +45,7 @@ public final class BookmarksViewModel {
         async let cw = repository.getContinueWatching()
         self.bookmarks = await bm
         self.continueWatching = await cw
+        await preloader?.preloadBookmarksEcosystem(bookmarks: self.bookmarks, continueItems: self.continueWatching)
     }
 
     public func removeBookmark(animeId: String) {

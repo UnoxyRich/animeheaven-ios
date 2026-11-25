@@ -320,6 +320,208 @@ struct AnimeHeavenCoreSelfTestMain {
             try check(fullTitle == "Full: bleach", "full search mismatch: \(String(describing: fullTitle))")
         }
 
+        await run("Mp4MoovSeekParser: faststart VBR & non-faststart tail moov + EpisodeVideoIndex") {
+            func appendUInt32(_ d: inout Data, _ v: UInt32) {
+                var be = v.bigEndian
+                withUnsafeBytes(of: &be) { d.append(contentsOf: $0) }
+            }
+            func appendInt64(_ d: inout Data, _ v: Int64) {
+                var be = v.bigEndian
+                withUnsafeBytes(of: &be) { d.append(contentsOf: $0) }
+            }
+            func boxHdr(_ type: String, _ size: Int64) -> Data {
+                var out = Data()
+                if size <= Int64(UInt32.max) {
+                    appendUInt32(&out, UInt32(size))
+                    out.append(Data(type.utf8))
+                } else {
+                    appendUInt32(&out, 1)
+                    out.append(Data(type.utf8))
+                    appendInt64(&out, size)
+                }
+                return out
+            }
+            func box(_ type: String, _ payload: Data) -> Data {
+                var out = boxHdr(type, Int64(8 + payload.count))
+                out.append(payload)
+                return out
+            }
+            func fullBox(_ type: String, _ payload: Data) -> Data {
+                var body = Data()
+                appendUInt32(&body, 0)
+                body.append(payload)
+                return box(type, body)
+            }
+            func makeMoov(sampleSizes: [Int], syncSamples: [Int], firstChunkOffset: Int64) -> Data {
+                var mvhdP = Data()
+                appendUInt32(&mvhdP, 0); appendUInt32(&mvhdP, 0)
+                appendUInt32(&mvhdP, 1000); appendUInt32(&mvhdP, UInt32(sampleSizes.count * 1000))
+                mvhdP.append(Data(repeating: 0, count: 80))
+                let mvhd = fullBox("mvhd", mvhdP)
+
+                var sttsP = Data()
+                appendUInt32(&sttsP, 1); appendUInt32(&sttsP, UInt32(sampleSizes.count)); appendUInt32(&sttsP, 1000)
+                var stssP = Data()
+                appendUInt32(&stssP, UInt32(syncSamples.count))
+                for s in syncSamples { appendUInt32(&stssP, UInt32(s)) }
+                var stscP = Data()
+                appendUInt32(&stscP, 1); appendUInt32(&stscP, 1); appendUInt32(&stscP, 1); appendUInt32(&stscP, 1)
+                var stszP = Data()
+                appendUInt32(&stszP, 0); appendUInt32(&stszP, UInt32(sampleSizes.count))
+                for sz in sampleSizes { appendUInt32(&stszP, UInt32(sz)) }
+                var stcoP = Data()
+                appendUInt32(&stcoP, UInt32(sampleSizes.count))
+                var off = firstChunkOffset
+                for sz in sampleSizes {
+                    appendUInt32(&stcoP, UInt32(off))
+                    off += Int64(sz)
+                }
+                var stblBody = Data()
+                stblBody.append(fullBox("stts", sttsP))
+                stblBody.append(fullBox("stss", stssP))
+                stblBody.append(fullBox("stsc", stscP))
+                stblBody.append(fullBox("stsz", stszP))
+                stblBody.append(fullBox("stco", stcoP))
+                let stbl = box("stbl", stblBody)
+
+                var mdhdP = Data()
+                appendUInt32(&mdhdP, 0); appendUInt32(&mdhdP, 0)
+                appendUInt32(&mdhdP, 1000); appendUInt32(&mdhdP, UInt32(sampleSizes.count * 1000)); appendUInt32(&mdhdP, 0)
+                var hdlrP = Data()
+                appendUInt32(&hdlrP, 0); hdlrP.append(Data("vide".utf8)); hdlrP.append(Data(repeating: 0, count: 12))
+                var mdiaBody = Data()
+                mdiaBody.append(fullBox("mdhd", mdhdP))
+                mdiaBody.append(fullBox("hdlr", hdlrP))
+                mdiaBody.append(box("minf", stbl))
+                var moovBody = Data()
+                moovBody.append(mvhd)
+                moovBody.append(box("trak", box("mdia", mdiaBody)))
+                return box("moov", moovBody)
+            }
+
+            // 1. Faststart VBR MP4 (24 min: first 12m @ 20 KB/s, last 12m @ 140 KB/s)
+            let vbrSizes = (0..<1440).map { $0 < 720 ? 20_000 : 140_000 }
+            let syncs = Array(stride(from: 1, through: 1440, by: 5))
+            let ftyp = box("ftyp", Data("isom\0\0\u{2}\0isommp41".utf8))
+            let approxMoov = makeMoov(sampleSizes: vbrSizes, syncSamples: syncs, firstChunkOffset: Int64(ftyp.count) + 30_000)
+            let mdatStart = Int64(ftyp.count + approxMoov.count + 8)
+            let moov = makeMoov(sampleSizes: vbrSizes, syncSamples: syncs, firstChunkOffset: mdatStart)
+            let mdatPayload = vbrSizes.reduce(Int64(0)) { $0 + Int64($1) }
+            let totalLen = Int64(ftyp.count + moov.count) + 8 + mdatPayload
+            var head = Data()
+            head.append(ftyp); head.append(moov); head.append(boxHdr("mdat", 8 + mdatPayload))
+
+            let loc = Mp4MoovSeekParser.inspectTopLevelBoxes(headData: head, totalLength: totalLen)
+            try check(loc?.offset == Int64(ftyp.count) && loc?.isAtTail == false, "faststart moov location mismatch")
+            let parsed = Mp4MoovSeekParser.parseMoovIndex(
+                episodeKey: "ep_vbr", contentLength: totalLen, moovFileOffset: loc!.offset,
+                data: head, dataBaseFileOffset: 0
+            )
+            try check(parsed?.durationMs == 1_440_000, "duration mismatch")
+            try check(parsed?.resolveByteOffset(targetMs: 600_000) == mdatStart + 600 * 20_000, "exact VBR resume mismatch")
+            try check(parsed?.resolveByteOffset(targetMs: 85_000) == mdatStart + 85 * 20_000, "exact OP offset mismatch")
+
+            let encoded = try JSONEncoder().encode(parsed!)
+            let decoded = try JSONDecoder().decode(EpisodeVideoIndex.self, from: encoded)
+            try check(decoded == parsed, "EpisodeVideoIndex Codable round-trip mismatch")
+
+            let win = DiskChunkCache.buildInitialWindowChunks(
+                totalLength: totalLen, targetBytes: 2 * 1024 * 1024,
+                resumePositionMs: 600_000, estimatedDurationMs: 1_440_000, opEndMs: 85_000,
+                videoIndex: parsed
+            )
+            try check(win.contains(DiskChunkCache.alignChunkStart(mdatStart + 600 * 20_000)), "window should include exact VBR keyframe")
+
+            // 2. Non-faststart tail moov MP4
+            let tailSizes = Array(repeating: 100_000, count: 600)
+            let tailSyncs = Array(stride(from: 1, through: 600, by: 5))
+            let tailMdatStart = Int64(ftyp.count + 8)
+            let tailMoov = makeMoov(sampleSizes: tailSizes, syncSamples: tailSyncs, firstChunkOffset: tailMdatStart)
+            let tailPayload = tailSizes.reduce(Int64(0)) { $0 + Int64($1) }
+            let tailMoovOffset = Int64(ftyp.count) + 8 + tailPayload
+            let tailTotal = tailMoovOffset + Int64(tailMoov.count)
+            var tailHead = Data()
+            tailHead.append(ftyp); tailHead.append(boxHdr("mdat", 8 + tailPayload)); tailHead.append(Data(repeating: 0, count: 512))
+
+            let tailLoc = Mp4MoovSeekParser.inspectTopLevelBoxes(headData: tailHead, totalLength: tailTotal)
+            try check(tailLoc?.offset == tailMoovOffset && tailLoc?.isAtTail == true, "tail moov location mismatch")
+            let tailParsed = Mp4MoovSeekParser.parseMoovIndex(
+                episodeKey: "ep_tail", contentLength: tailTotal, moovFileOffset: tailLoc!.offset,
+                data: tailMoov, dataBaseFileOffset: tailLoc!.offset
+            )
+            try check(tailParsed?.isMoovAtTail == true && tailParsed?.durationMs == 600_000, "tail moov parse mismatch")
+        }
+
+        await run("DiskChunkCache: Tier-A eviction protection, readRange, lengths persistence & 2 GB cap") {
+            let dir = FileManager.default.temporaryDirectory
+                .appendingPathComponent("ah-selftest-tier-\(UUID().uuidString)", isDirectory: true)
+            defer { try? FileManager.default.removeItem(at: dir) }
+
+            let chunkSize = Int(DiskChunkCache.chunkSizeBytes)
+            let cache = DiskChunkCache(rootDirectory: dir, maxCacheBytes: Int64(chunkSize) * 5)
+            await cache.warmUp()
+
+            let hotKey = "ep:hot:100000000"
+            await cache.markHotWindow(cacheKey: hotKey, offsets: [0, Int64(chunkSize)])
+            await cache.writeChunk(cacheKey: hotKey, chunkOffset: 0, data: Data(repeating: 0xAA, count: chunkSize))
+            await cache.writeChunk(cacheKey: hotKey, chunkOffset: Int64(chunkSize), data: Data(repeating: 0xBB, count: chunkSize))
+
+            let cross = await cache.readRange(cacheKey: hotKey, startOffset: Int64(chunkSize - 4), length: 8)
+            try check(cross == Data([0xAA, 0xAA, 0xAA, 0xAA, 0xBB, 0xBB, 0xBB, 0xBB]), "cross-chunk readRange mismatch")
+
+            let watchedKey = "ep:watched:100000000"
+            for i in 0..<5 {
+                await cache.writeChunk(
+                    cacheKey: watchedKey,
+                    chunkOffset: Int64(i) * Int64(chunkSize),
+                    data: Data(repeating: UInt8(i), count: chunkSize)
+                )
+            }
+            let has0 = await cache.hasChunk(cacheKey: hotKey, chunkOffset: 0)
+            let has1 = await cache.hasChunk(cacheKey: hotKey, chunkOffset: Int64(chunkSize))
+            let protBefore = await cache.protectedSizeBytes()
+            try check(has0, "Tier-A chunk 0 must survive")
+            try check(has1, "Tier-A chunk 1 must survive")
+            try check(protBefore == Int64(chunkSize * 2), "protected bytes mismatch")
+
+            await cache.demoteTrailingChunks(cacheKey: hotKey, behindOffset: Int64(chunkSize))
+            let protAfter = await cache.protectedSizeBytes()
+            try check(protAfter == Int64(chunkSize), "demote trailing mismatch")
+
+            await cache.recordEpisodeLength(episodeKey: "ep_len", contentLength: 142_000_000)
+            let reloaded = DiskChunkCache(rootDirectory: dir, maxCacheBytes: Int64(chunkSize) * 5)
+            let knownLen = await reloaded.knownContentLength(episodeKey: "ep_len")
+            try check(knownLen == 142_000_000, "persisted length mismatch")
+
+            let gb: Int64 = 1024 * 1024 * 1024
+            try check(DiskChunkCache.calculateVideoCacheMaxBytes(usableSpaceBytes: 2 * gb) == 512 * 1024 * 1024, "2GB disk -> 512MB")
+            try check(DiskChunkCache.calculateVideoCacheMaxBytes(usableSpaceBytes: 6 * gb) == 1 * gb, "6GB disk -> 1GB")
+            try check(DiskChunkCache.calculateVideoCacheMaxBytes(usableSpaceBytes: 16 * gb) == 2 * gb, "16GB disk -> 2GB")
+            try check(DiskChunkCache.calculateVideoCacheMaxBytes(usableSpaceBytes: 1 * gb) == 256 * 1024 * 1024, "quarter cap")
+        }
+
+        await run("NetworkPolicy: strict Wi-Fi-only gating on metered connections") {
+            try check(NetworkPolicy.resolveEffectiveMode(configured: .aggressive, metered: true) == .dataSaver, "metered aggressive -> dataSaver")
+            try check(NetworkPolicy.resolveEffectiveMode(configured: .balanced, metered: true) == .dataSaver, "metered balanced -> dataSaver")
+            try check(NetworkPolicy.resolveEffectiveMode(configured: .aggressive, metered: false) == .aggressive, "unmetered aggressive")
+            try check(NetworkPolicy.resolveEffectiveMode(configured: .balanced, metered: false) == .balanced, "unmetered balanced")
+        }
+
+        await run("SQLiteDatabase: recent streams, video meta, and ordered bookmark IDs") {
+            let db = try SQLiteDatabase(path: ":memory:")
+            await db.upsertBookmark(BookmarkRecord(animeId: "b1", title: "B1", coverUrl: "", lastEpisodeLabel: "1", addedAt: 100))
+            await db.upsertBookmark(BookmarkRecord(animeId: "b2", title: "B2", coverUrl: "", lastEpisodeLabel: "2", addedAt: 200))
+            let bmIds = await db.getOrderedBookmarkIds(limit: 10)
+            try check(bmIds == ["b2", "b1"], "ordered bookmark IDs mismatch")
+
+            await db.upsertWebCache(WebCacheRecord(cacheKey: "gate:ep1", payload: "", fetchedAt: 100, parsedJson: "{}"))
+            await db.upsertWebCache(WebCacheRecord(cacheKey: "vmeta:ep1", payload: "", fetchedAt: 200, parsedJson: "{}"))
+            let streams = await db.getRecentCachedStreams(limit: 10)
+            let metas = await db.getRecentVideoMeta(limit: 10)
+            try check(streams.map(\.cacheKey) == ["gate:ep1"], "recent streams mismatch")
+            try check(metas.map(\.cacheKey) == ["vmeta:ep1"], "recent vmeta mismatch")
+        }
+
         print("\nSelf-Test Summary: \(stats.passed) passed, \(stats.failed) failed")
         if stats.failed > 0 {
             exit(1)

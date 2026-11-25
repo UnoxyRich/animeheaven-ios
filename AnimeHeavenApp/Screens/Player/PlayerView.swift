@@ -25,13 +25,19 @@ struct PlayerView: View {
 
     @StateObject private var modelStorage: ViewModelStorage<PlayerViewModel>
     private var viewModel: PlayerViewModel { modelStorage.value }
-    @State private var player = AVPlayer()
+    @State private var player: AVQueuePlayer = {
+        let queue = AVQueuePlayer()
+        queue.actionAtItemEnd = .pause
+        return queue
+    }()
     @State private var progress = PlayerProgressModel()
     @State private var pipCoordinator = PipCoordinator()
     @State private var nowPlaying = NowPlayingBridge()
 
     @State private var isPlaying = false
     @State private var isBuffering = true
+    @State private var showBufferingSpinner = false
+    @State private var queuedNextEpisodeKey: String?
     @State private var isInPipMode = false
     @State private var hudVisible = true
     @State private var hudNonce = 0
@@ -102,7 +108,7 @@ struct PlayerView: View {
                     .ignoresSafeArea()
             }
 
-            if !isInPipMode && (viewModel.isLoading || (isBuffering && viewModel.errorMessage == nil)) {
+            if !isInPipMode && showBufferingSpinner {
                 ProgressView()
                     .tint(palette.crimson)
                     .scaleEffect(1.5)
@@ -216,10 +222,31 @@ struct PlayerView: View {
         .onChange(of: viewModel.playbackURL, initial: true) { _, newURL in
             guard !isCleanedUp else { return }
             if let newURL {
+                if let currentAsset = player.currentItem?.asset as? AVURLAsset, currentAsset.url == newURL {
+                    return
+                }
                 loadIntoAVPlayer(url: newURL)
             } else {
                 player.pause()
-                player.replaceCurrentItem(with: nil)
+                player.removeAllItems()
+                queuedNextEpisodeKey = nil
+            }
+        }
+        .onChange(of: viewModel.preparedNextEpisode?.localURL) { _, _ in
+            syncQueuedNextItem(viewModel.preparedNextEpisode)
+        }
+        .task(id: "\(viewModel.isLoading)|\(isBuffering)|\(viewModel.isDiskCacheWarm)|\(viewModel.errorMessage != nil)|\(viewModel.playbackURL != nil)") {
+            let needsSpinner = viewModel.errorMessage == nil && (viewModel.isLoading || isBuffering)
+            if !needsSpinner {
+                showBufferingSpinner = false
+            } else if viewModel.isDiskCacheWarm || viewModel.playbackURL == nil {
+                let delayMs: Int = viewModel.isDiskCacheWarm ? 220 : 180
+                try? await Task.sleep(for: .milliseconds(delayMs))
+                if !Task.isCancelled && viewModel.errorMessage == nil && (viewModel.isLoading || isBuffering) {
+                    showBufferingSpinner = true
+                }
+            } else {
+                showBufferingSpinner = true
             }
         }
         .onChange(of: isLandscape) { _, landscape in
@@ -662,10 +689,19 @@ struct PlayerView: View {
         showUpNextOverlay = false
         activeSkipSegment = nil
         handledSkipTypes.removeAll()
+        queuedNextEpisodeKey = nil
 
         let item = AVPlayerItem(url: url)
         item.preferredForwardBufferDuration = 25
 
+        attachItemObservers(to: item, allowResumeSeek: true)
+
+        player.removeAllItems()
+        player.insert(item, after: nil)
+        syncQueuedNextItem(viewModel.preparedNextEpisode)
+    }
+
+    private func attachItemObservers(to item: AVPlayerItem, allowResumeSeek: Bool) {
         statusObservation?.invalidate()
         statusObservation = item.observe(\.status, options: [.new]) { observedItem, _ in
             Task { @MainActor in
@@ -674,9 +710,9 @@ struct PlayerView: View {
                 case .readyToPlay:
                     isBuffering = false
                     let durSec = observedItem.duration.seconds
-                    let durMs = durSec.isFinite && durSec > 0 ? Int64(durSec * 1000) : 0
+                    let durMs = durSec.isFinite && durSec > 0 ? Int64(durSec * 1000) : viewModel.initialDurationMs
                     if durMs > 0 { progress.durationMs = durMs }
-                    if viewModel.initialResumePositionMs > 0 {
+                    if allowResumeSeek && viewModel.initialResumePositionMs > 0 {
                         let target = CMTime(value: viewModel.initialResumePositionMs, timescale: 1000)
                         await player.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero)
                     }
@@ -715,8 +751,26 @@ struct PlayerView: View {
                 }
             }
         }
+    }
 
-        player.replaceCurrentItem(with: item)
+    private func syncQueuedNextItem(_ prepared: PreparedNextEpisode?) {
+        guard !isCleanedUp else { return }
+        let current = player.currentItem
+        for item in player.items() where item !== current {
+            player.remove(item)
+        }
+        queuedNextEpisodeKey = nil
+
+        guard let prepared, let current else { return }
+        if let currentAsset = current.asset as? AVURLAsset, currentAsset.url == prepared.localURL {
+            return
+        }
+        let nextItem = AVPlayerItem(url: prepared.localURL)
+        nextItem.preferredForwardBufferDuration = 25
+        if player.canInsert(nextItem, after: current) {
+            player.insert(nextItem, after: current)
+            queuedNextEpisodeKey = prepared.episodeKey
+        }
     }
 
     private func configurePlayerObservers() {
@@ -777,6 +831,9 @@ struct PlayerView: View {
                 }
 
                 viewModel.onPlayheadTick(positionMs: progress.positionMs, durationMs: progress.durationMs)
+                if isPlaying && (progress.bufferedMs - progress.positionMs) >= 15_000 {
+                    viewModel.onPlaybackHealthyBufferAhead()
+                }
                 activeSkipSegment = SkipPromptLogic.resolveActiveSegment(
                     positionMs: progress.positionMs,
                     durationMs: progress.durationMs,
@@ -874,11 +931,39 @@ struct PlayerView: View {
 
     private func switchToEpisode(_ nextEpisodeKey: String) {
         persistCurrentProgress()
-        player.pause()
         showUpNextOverlay = false
+        activeSkipSegment = nil
+        handledSkipTypes.removeAll()
         progress.positionMs = 0
         progress.durationMs = 0
         progress.bufferedMs = 0
+
+        // Fast 0 ms gapless cut when the next episode is already pre-buffered in AVQueuePlayer
+        if queuedNextEpisodeKey == nextEpisodeKey,
+           viewModel.preparedNextEpisode?.episodeKey == nextEpisodeKey,
+           player.items().count >= 2,
+           let promoted = viewModel.promotePreparedNextEpisode() {
+            queuedNextEpisodeKey = nil
+            player.advanceToNextItem()
+            if let nextItem = player.currentItem {
+                attachItemObservers(to: nextItem, allowResumeSeek: false)
+                if nextItem.status == .readyToPlay {
+                    isBuffering = false
+                    let durSec = nextItem.duration.seconds
+                    let durMs = durSec.isFinite && durSec > 0 ? Int64(durSec * 1000) : promoted.durationMs
+                    if durMs > 0 { progress.durationMs = durMs }
+                    startAudioSession()
+                    player.playImmediately(atRate: playbackRate)
+                    viewModel.onPlaybackStarted(durationMs: durMs)
+                } else {
+                    isBuffering = true
+                }
+                return
+            }
+        }
+
+        player.pause()
+        queuedNextEpisodeKey = nil
         viewModel.loadEpisode(episodeKey: nextEpisodeKey)
     }
 
@@ -922,7 +1007,8 @@ struct PlayerView: View {
             self.endObserver = nil
         }
         player.pause()
-        player.replaceCurrentItem(with: nil)
+        player.removeAllItems()
+        queuedNextEpisodeKey = nil
         pipCoordinator.stopPip()
         pipCoordinator.onPipStateChanged = nil
         nowPlaying.clearRemoteCommands()

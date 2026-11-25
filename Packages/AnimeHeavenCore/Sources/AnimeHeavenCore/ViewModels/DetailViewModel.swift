@@ -179,17 +179,18 @@ public final class DetailViewModel {
     private func warmPrimaryEpisodeIfNeeded() {
         guard let detail, let target = primaryAction, target.episodeKey != lastPreloadedKey else { return }
         lastPreloadedKey = target.episodeKey
-        let resumeMs = progressMap[target.episodeKey]?.positionMs ?? 0
-        let durationMs = progressMap[target.episodeKey]?.durationMs ?? 0
+        let saved = progressMap[target.episodeKey]
+        let resumeMs = saved.map {
+            WatchProgressLogic.resolveResumePositionMs(positionMs: $0.positionMs, durationMs: $0.durationMs)
+        } ?? 0
+        let durationMs = saved?.durationMs ?? 0
         Task.detached(priority: .utility) { [preloader] in
-            await preloader?.warmEpisode(
-                episodeKey: target.episodeKey,
-                animeId: detail.id,
-                animeTitle: detail.title,
-                episodeLabel: target.episodeLabel,
-                videoBytes: 0,
-                resumePositionMs: resumeMs,
-                estimatedDurationMs: durationMs
+            await preloader?.preloadAnimeDetail(
+                detail: detail,
+                primaryEpisodeKey: target.episodeKey,
+                primaryEpisodeLabel: target.episodeLabel,
+                primaryResumeMs: resumeMs,
+                primaryDurationMs: durationMs
             )
         }
     }
