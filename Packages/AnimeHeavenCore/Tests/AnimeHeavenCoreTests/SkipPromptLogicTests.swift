@@ -44,7 +44,7 @@ struct SkipPromptLogicTests {
         #expect(action.feedbackLabel == "Next Episode")
     }
 
-    @Test func fallbackOpWhenAniSkipReturnsEmpty() {
+    @Test func doesNotShowFallbackSkipWhenAniSkipReturnsEmpty() {
         let active = SkipPromptLogic.resolveActiveSegment(
             positionMs: 20_000,
             durationMs: 1_440_000,
@@ -54,10 +54,20 @@ struct SkipPromptLogicTests {
             fallbackSkipSeconds: 85,
             handledTypes: []
         )
-        #expect(active != nil)
-        #expect(active?.type == .op)
-        #expect(active?.isExact == false)
-        #expect(active?.endMs == 105_000)
+        #expect(active == nil)
+        #expect(SkipPromptLogic.hudActiveSegment(
+            positionMs: 20_000,
+            skipTimes: EpisodeSkipTimes(),
+            skipPromptEnabled: true
+        ) == nil)
+    }
+
+    @Test func hudActiveSegmentOnlyMatchesInsideFetchedOpOrEdWindow() {
+        let op = SkipSegment(type: .op, startMs: 80_000, endMs: 170_000, isExact: true)
+        let times = EpisodeSkipTimes(op: op, ed: nil)
+        #expect(SkipPromptLogic.hudActiveSegment(positionMs: 0, skipTimes: times, skipPromptEnabled: true) == nil)
+        #expect(SkipPromptLogic.hudActiveSegment(positionMs: 90_000, skipTimes: times, skipPromptEnabled: true) == op)
+        #expect(SkipPromptLogic.hudActiveSegment(positionMs: 175_000, skipTimes: times, skipPromptEnabled: true) == nil)
     }
 
     @Test func disabledOrAlreadyHandledSuppressesPrompt() {

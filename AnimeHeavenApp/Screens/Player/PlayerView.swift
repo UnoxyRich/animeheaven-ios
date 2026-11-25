@@ -555,22 +555,9 @@ struct PlayerView: View {
 
             Spacer()
 
-            // Bottom Scrubber + Episode Nav
+            // Bottom Episode Nav + Scrubber
             VStack(spacing: 10) {
-                InteractiveSeekBar(
-                    progress: progress,
-                    accentColor: palette.crimson,
-                    onSeekCommitted: { targetMs in
-                        seekTo(ms: targetMs)
-                        hudNonce += 1
-                    },
-                    onScrubbingChanged: { scrubbing in
-                        isScrubbing = scrubbing
-                        if !scrubbing { hudNonce += 1 }
-                    }
-                )
-
-                HStack {
+                HStack(spacing: 8) {
                     if let prevKey = viewModel.stream?.prevEpisodeKey {
                         Button {
                             switchToEpisode(prevKey)
@@ -586,16 +573,24 @@ struct PlayerView: View {
 
                     Spacer()
 
-                    Button {
-                        let jump = Int64(viewModel.settingsStore.skipOpSeconds) * 1000
-                        seekBy(deltaMs: jump, label: "+\(viewModel.settingsStore.skipOpSeconds)s")
-                    } label: {
-                        Label("Skip +\(viewModel.settingsStore.skipOpSeconds)s", systemImage: "forward.fill")
+                    if let hudSkipSegment = SkipPromptLogic.hudActiveSegment(
+                        positionMs: progress.positionMs,
+                        skipTimes: viewModel.skipTimes,
+                        skipPromptEnabled: viewModel.settingsStore.skipPromptEnabled
+                    ) {
+                        Button {
+                            executeSkip(segment: hudSkipSegment)
+                        } label: {
+                            Label(
+                                hudSkipSegment.type == .op ? "Skip Opening" : "Skip Ending",
+                                systemImage: "forward.fill"
+                            )
                             .font(.caption.weight(.bold))
                             .foregroundStyle(.white)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 7)
                             .background(Color.white.opacity(0.18), in: Capsule())
+                        }
                     }
 
                     if let nextKey = viewModel.stream?.nextEpisodeKey {
@@ -611,6 +606,19 @@ struct PlayerView: View {
                         }
                     }
                 }
+
+                InteractiveSeekBar(
+                    progress: progress,
+                    accentColor: palette.crimson,
+                    onSeekCommitted: { targetMs in
+                        seekTo(ms: targetMs)
+                        hudNonce += 1
+                    },
+                    onScrubbingChanged: { scrubbing in
+                        isScrubbing = scrubbing
+                        if !scrubbing { hudNonce += 1 }
+                    }
+                )
             }
             .padding(.horizontal, 18)
             .padding(.top, 16)

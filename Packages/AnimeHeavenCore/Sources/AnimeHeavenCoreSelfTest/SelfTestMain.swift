@@ -240,6 +240,22 @@ struct AnimeHeavenCoreSelfTestMain {
                 fallbackSkipSeconds: 85, hasNextEpisode: true
             )
             try check(action.kind == .nextEpisode, "ed near end should advance episode")
+            try check(
+                SkipPromptLogic.resolveActiveSegment(
+                    positionMs: 5_000, durationMs: 1_440_000,
+                    skipTimes: EpisodeSkipTimes(), skipTimesResolved: true,
+                    skipPromptEnabled: true, fallbackSkipSeconds: 85, handledTypes: []
+                ) == nil,
+                "no fallback 85s skip when AniSkip returns empty"
+            )
+            try check(
+                SkipPromptLogic.hudActiveSegment(
+                    positionMs: 1_350_000,
+                    skipTimes: EpisodeSkipTimes(op: nil, ed: ed),
+                    skipPromptEnabled: true
+                ) == ed,
+                "hudActiveSegment should match fetched ED"
+            )
 
             let q = MirrorQueueState(sources: ["u1", "u2"]).advanceOnError().advanceOnError()
             try check(q.exhausted, "mirror queue exhaustion")

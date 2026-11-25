@@ -46,24 +46,21 @@ public enum SkipPromptLogic {
             }
         }
 
-        if skipTimesResolved && skipTimes.op == nil && !handledTypes.contains(.op) {
-            let safeDur = durationMs
-            let skipMs = Int64(max(30, fallbackSkipSeconds)) * 1000
-            if safeDur >= fallbackMinEpisodeMs &&
-                positionMs >= fallbackOpStartMs &&
-                positionMs <= fallbackOpMaxWindowMs {
-                let target = min(positionMs + skipMs, max(0, safeDur - 5_000))
-                if target > positionMs + 5_000 {
-                    return SkipSegment(
-                        type: .op,
-                        startMs: fallbackOpStartMs,
-                        endMs: target,
-                        isExact: false
-                    )
-                }
-            }
-        }
+        return nil
+    }
 
+    public static func hudActiveSegment(
+        positionMs: Int64,
+        skipTimes: EpisodeSkipTimes,
+        skipPromptEnabled: Bool
+    ) -> SkipSegment? {
+        guard skipPromptEnabled else { return nil }
+        if let op = skipTimes.op, positionMs >= op.startMs, positionMs < (op.endMs - 1_000) {
+            return op
+        }
+        if let ed = skipTimes.ed, positionMs >= ed.startMs, positionMs < (ed.endMs - 1_000) {
+            return ed
+        }
         return nil
     }
 

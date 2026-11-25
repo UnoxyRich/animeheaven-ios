@@ -515,6 +515,9 @@ struct PopularHorizontalStrip: View {
                                             endPoint: .bottom
                                         )
 
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .strokeBorder(palette.borderSubtle, lineWidth: 1)
+
                                         if rank <= 10 {
                                             VStack {
                                                 HStack {
@@ -526,7 +529,7 @@ struct PopularHorizontalStrip: View {
                                                             .font(.system(size: 10, weight: .black))
                                                     }
                                                     .foregroundStyle(.white)
-                                                    .padding(.horizontal, 4)
+                                                    .padding(.horizontal, 5)
                                                     .padding(.vertical, 3)
                                                     .background(
                                                         palette.crimson,
@@ -550,12 +553,8 @@ struct PopularHorizontalStrip: View {
                                             .padding(.horizontal, 7)
                                             .padding(.bottom, 7)
                                     }
-                                    .frame(width: 114, height: 164)
+                                    .frame(width: 114, height: 171)
                                     .clipShape(RoundedRectangle(cornerRadius: 8))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 8)
-                                            .stroke(palette.borderSubtle, lineWidth: 1)
-                                    )
                                 }
                             }
                             .buttonStyle(.plain)
