@@ -4,6 +4,13 @@ Native **Swift 6 + SwiftUI + AVFoundation** iPhone and iPad application for brow
 
 > **Companion Repositories**: See `animeheaven-tv` (`me.animeheaven.tv`) for Android TV / Leanback and `animeheaven-android` (`me.animeheaven.android`) for Android phones & tablets.
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots.jpg" alt="AnimeHeaven iOS Screenshots — Home, Popular, Detail, and Settings" width="720" />
+</p>
+<p align="center"><sub>Home (Cinema Dark) · Popular Today · Anime Detail (Classic Light) · Settings &amp; 8 Themes (Midnight Indigo)</sub></p>
+
 ---
 
 ## Key Capabilities
